@@ -1,12 +1,12 @@
 import { SignUpCommand } from '@aws-sdk/client-cognito-identity-provider'
-import { getCognitoPublicClient, normalizeCognitoEmail, throwCognitoServiceError } from '../../utils/cognito'
+import { getCognitoPublicClient, isValidCognitoPassword, normalizeCognitoEmail, throwCognitoServiceError } from '../../utils/cognito'
 
 export default defineEventHandler(async (event) => {
   const body = await readBody<{ email?: unknown; password?: unknown }>(event) || {}
   const email = normalizeCognitoEmail(body.email)
   const password = typeof body.password === 'string' ? body.password : ''
 
-  if (password.length < 12 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) {
+  if (!isValidCognitoPassword(password)) {
     throw createError({
       statusCode: 400,
       message: 'A senha deve ter pelo menos 12 caracteres, com letras maiúsculas, minúsculas e números.',

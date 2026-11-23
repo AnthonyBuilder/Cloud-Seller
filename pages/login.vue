@@ -10,6 +10,9 @@ const error = ref('')
 const notice = ref('')
 const confirmationRequired = ref(false)
 const loading = ref(false)
+const mode = ref<'login' | 'forgot' | 'reset'>('login')
+const resetCode = ref('')
+const newPassword = ref('')
 
 onMounted(async () => {
   const params = new URLSearchParams(window.location.search)
@@ -78,6 +81,59 @@ async function login() {
     loading.value = false
   }
 }
+
+async function requestPasswordReset() {
+  error.value = ''
+  notice.value = ''
+  loading.value = true
+  try {
+    await $fetch('/api/auth/forgot-password', {
+      method: 'POST',
+      body: { email: email.value.trim().toLowerCase() },
+    })
+    mode.value = 'reset'
+    notice.value = 'Se houver uma conta confirmada com esse e-mail, enviaremos um código para redefinir a senha.'
+  } catch (caught) {
+    error.value = getAuthError(caught, 'Não foi possível solicitar a redefinição. Tente novamente.').message
+  } finally {
+    loading.value = false
+  }
+}
+
+async function resetPassword() {
+  error.value = ''
+  notice.value = ''
+
+  if (!/^\d{6}$/.test(resetCode.value.trim())) {
+    error.value = 'Informe o código de redefinição de 6 dígitos.'
+    return
+  }
+  if (newPassword.value.length < 12 || !/[A-Z]/.test(newPassword.value) || !/[a-z]/.test(newPassword.value) || !/[0-9]/.test(newPassword.value)) {
+    error.value = 'Use pelo menos 12 caracteres, com letras maiúsculas, minúsculas e números.'
+    return
+  }
+
+  loading.value = true
+  try {
+    await $fetch('/api/auth/reset-password', {
+      method: 'POST',
+      body: {
+        email: email.value.trim().toLowerCase(),
+        code: resetCode.value.trim(),
+        password: newPassword.value,
+      },
+    })
+    password.value = ''
+    newPassword.value = ''
+    resetCode.value = ''
+    mode.value = 'login'
+    notice.value = 'Senha redefinida. Entre com sua nova senha.'
+  } catch (caught) {
+    error.value = getAuthError(caught, 'Não foi possível redefinir a senha. Confira os dados e tente novamente.').message
+  } finally {
+    loading.value = false
+  }
+}
 </script>
 
 <template>
@@ -92,14 +148,22 @@ async function login() {
     <section class="auth-card" aria-labelledby="login-title">
       <div>
         <span class="eyebrow">SUA NUVEM</span>
-        <h1 id="login-title">Bem-vindo de volta</h1>
-        <p>Entre para acessar seus arquivos.</p>
+        <h1 id="login-title">
+          {{ mode === 'login' ? 'Bem-vindo de volta' : mode === 'forgot' ? 'Recupere sua senha' : 'Redefina sua senha' }}
+        </h1>
+        <p>
+          {{ mode === 'login'
+            ? 'Entre para acessar seus arquivos.'
+            : mode === 'forgot'
+              ? 'Enviaremos um código ao e-mail da sua conta.'
+              : 'Digite o código recebido e escolha uma nova senha.' }}
+        </p>
       </div>
 
       <p v-if="notice" class="auth-success" role="status">{{ notice }}</p>
       <p v-if="error" class="auth-error" role="alert">{{ error }}</p>
 
-      <form class="auth-form" @submit.prevent="login">
+      <form v-if="mode === 'login'" class="auth-form" @submit.prevent="login">
         <label>
           E-mail
           <input
@@ -136,9 +200,80 @@ async function login() {
           {{ loading ? 'Entrando...' : 'Entrar na minha nuvem' }}
           <IconSymbol v-if="!loading" name="arrow-right" />
         </button>
+        <button class="auth-link-button" type="button" :disabled="loading" @click="mode = 'forgot'; error = ''; notice = ''; confirmationRequired = false">
+          Esqueci minha senha
+        </button>
       </form>
 
-      <p v-if="confirmationRequired" class="auth-switch">
+      <form v-else-if="mode === 'forgot'" class="auth-form" @submit.prevent="requestPasswordReset">
+        <label>
+          E-mail
+          <input
+            v-model="email"
+            type="email"
+            placeholder="voce@email.com"
+            autocomplete="email"
+            autocapitalize="off"
+            maxlength="254"
+            required
+          />
+        </label>
+        <button class="button button-primary auth-submit" type="submit" :disabled="loading">
+          {{ loading ? 'Enviando...' : 'Enviar código' }}
+          <IconSymbol v-if="!loading" name="arrow-right" />
+        </button>
+        <button class="auth-link-button" type="button" :disabled="loading" @click="mode = 'login'; error = ''; notice = ''">
+          Voltar para entrar
+        </button>
+      </form>
+
+      <form v-else class="auth-form" @submit.prevent="resetPassword">
+        <label>
+          E-mail
+          <input v-model="email" type="email" autocomplete="email" maxlength="254" required />
+        </label>
+        <label>
+          Código de redefinição
+          <input
+            v-model="resetCode"
+            type="text"
+            inputmode="numeric"
+            autocomplete="one-time-code"
+            placeholder="000000"
+            maxlength="6"
+            pattern="[0-9]{6}"
+            required
+          />
+        </label>
+        <label>
+          Nova senha
+          <span class="auth-password-field">
+            <input
+              v-model="newPassword"
+              :type="showPassword ? 'text' : 'password'"
+              placeholder="Crie uma nova senha"
+              autocomplete="new-password"
+              minlength="12"
+              required
+            />
+            <button
+              class="auth-password-toggle"
+              type="button"
+              :aria-pressed="showPassword"
+              @click="showPassword = !showPassword"
+            >
+              {{ showPassword ? 'Ocultar' : 'Mostrar' }}
+            </button>
+          </span>
+        </label>
+        <p class="auth-hint">Use pelo menos 12 caracteres, incluindo letras maiúsculas, minúsculas e números.</p>
+        <button class="button button-primary auth-submit" type="submit" :disabled="loading">
+          {{ loading ? 'Redefinindo...' : 'Salvar nova senha' }}
+          <IconSymbol v-if="!loading" name="arrow-right" />
+        </button>
+      </form>
+
+      <p v-if="confirmationRequired && mode === 'login'" class="auth-switch">
         <NuxtLink
           class="auth-link"
           :to="{ path: '/register', query: { confirm: '1', email: email.trim().toLowerCase() } }"
@@ -147,9 +282,14 @@ async function login() {
         </NuxtLink>
       </p>
 
-      <p class="auth-switch">
+      <p v-if="mode === 'login'" class="auth-switch">
         Ainda não tem uma conta?
         <NuxtLink class="auth-link" to="/register">Criar conta</NuxtLink>
+      </p>
+      <p v-else-if="mode === 'reset'" class="auth-switch">
+        <button class="auth-link-button" type="button" :disabled="loading" @click="mode = 'forgot'; error = ''; notice = ''">
+          Solicitar outro código
+        </button>
       </p>
     </section>
 

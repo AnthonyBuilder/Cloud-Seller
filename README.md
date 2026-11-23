@@ -45,7 +45,8 @@ credenciais AWS.
 
 Na rota `/register`, o cliente cria a conta pelo Cloud Seller, confirma o e-mail com
 o código enviado pelo Cognito e, em seguida, entra pela rota `/login`, que autentica
-diretamente no Cognito sem redirecionar para a Hosted UI. O App Client precisa permitir
+diretamente no Cognito sem redirecionar para a Hosted UI. O login também permite solicitar
+um código de redefinição de senha pelo e-mail. O App Client precisa permitir
 o fluxo `ALLOW_USER_PASSWORD_AUTH`, além dos fluxos OAuth usados pelo aplicativo desktop.
 
 ## AWS Cognito e S3

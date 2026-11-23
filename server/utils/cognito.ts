@@ -32,6 +32,10 @@ const cognitoErrors: Record<string, { statusCode: number; message: string }> = {
     statusCode: 429,
     message: 'Muitas tentativas. Aguarde antes de solicitar outro código.',
   },
+  TooManyFailedAttemptsException: {
+    statusCode: 429,
+    message: 'Muitas tentativas. Aguarde antes de tentar novamente.',
+  },
   NotAuthorizedException: {
     statusCode: 400,
     message: 'A conta já pode estar confirmada. Tente entrar ou solicite um novo código.',
@@ -83,6 +87,10 @@ export function normalizeCognitoEmail(value: unknown) {
   }
 
   return email
+}
+
+export function isValidCognitoPassword(password: string) {
+  return password.length >= 12 && /[A-Z]/.test(password) && /[a-z]/.test(password) && /[0-9]/.test(password)
 }
 
 export function throwCognitoServiceError(error: unknown, operation: string): never {
