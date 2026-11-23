@@ -31,7 +31,7 @@ onMounted(async () => {
         name: 'Cliente',
         email: '',
       }))
-      navigateTo('/dashboard')
+      navigateTo('/subscription')
     } catch (caught) {
       error.value = 'Não foi possível concluir o login com AWS Cognito.'
     } finally {
@@ -41,7 +41,7 @@ onMounted(async () => {
   }
 
   if (import.meta.client && localStorage.getItem('cloud-seller-session') && localStorage.getItem('cloud-seller-id-token')) {
-    navigateTo('/dashboard')
+    navigateTo('/subscription')
   }
 })
 
@@ -69,7 +69,7 @@ async function login() {
       email: normalizedEmail,
     }))
     password.value = ''
-    await navigateTo('/dashboard')
+    await navigateTo('/subscription')
   } catch (caught) {
     const apiError = getAuthError(caught, 'Não foi possível entrar. Tente novamente.')
     error.value = apiError.message

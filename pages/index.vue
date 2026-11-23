@@ -8,23 +8,23 @@ useHead({
 
 const plans = [
   {
+    id: 'essencial',
     name: 'Essencial',
     description: 'Para guardar o que importa.',
-    price: '19',
     storage: '100 GB',
     featured: false,
   },
   {
+    id: 'pro',
     name: 'Pro',
     description: 'Mais espaço para sua rotina.',
-    price: '39',
     storage: '1 TB',
     featured: true,
   },
   {
+    id: 'familia',
     name: 'Família',
     description: 'Espaço para todo mundo.',
-    price: '69',
     storage: '2 TB',
     featured: false,
   },
@@ -146,12 +146,12 @@ const plans = [
             <span v-if="plan.featured" class="popular-label">MAIS ESCOLHIDO</span>
             <h3>{{ plan.name }}</h3>
             <p class="plan-description">{{ plan.description }}</p>
-            <p class="plan-price"><span>R$</span>{{ plan.price }}<small>/mês</small></p>
+            <p class="plan-price">5<small>dias grátis</small></p>
             <div class="plan-storage"><IconSymbol name="cloud-upload" /> {{ plan.storage }} de armazenamento</div>
-            <a class="button" :class="plan.featured ? 'button-primary' : 'button-plan'" href="mailto:contato@seudominio.com?subject=Quero%20conhecer%20os%20planos">
-              Quero este plano <IconSymbol name="arrow-right" />
-            </a>
-            <p class="plan-note">Cancele quando quiser</p>
+            <NuxtLink class="button" :class="plan.featured ? 'button-primary' : 'button-plan'" to="/register">
+              Criar conta <IconSymbol name="arrow-right" />
+            </NuxtLink>
+            <p class="plan-note">Sem cobrança durante o teste</p>
           </article>
         </div>
         <aside class="backup-addon" aria-labelledby="backup-addon-title">
@@ -180,7 +180,7 @@ const plans = [
             </a>
           </div>
         </aside>
-        <p class="plans-footnote">Planos e valores ilustrativos, sujeitos a definição antes do lançamento.</p>
+        <p class="plans-footnote">Os valores serão definidos antes da ativação das cobranças. Após os cinco dias de teste, novos envios ficam bloqueados até a renovação; seus arquivos continuam disponíveis.</p>
       </div>
     </section>
 

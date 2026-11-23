@@ -1,7 +1,19 @@
 <script setup lang="ts">
+import { getAuthError } from '~/utils/auth-errors'
+
 useHead({ title: 'Meus arquivos - Cloud Seller' })
 
 type UserSession = { name: string; email: string }
+type StorageSummary = {
+  subscription: {
+    name: string
+    storage: string
+    quotaBytes: number
+    status: 'trial' | 'active' | 'expired'
+    trialEndsAt: number
+  } | null
+  usedBytes: number
+}
 type CloudFile = {
   id: string
   name: string
@@ -27,7 +39,8 @@ const fileInput = ref<HTMLInputElement | null>(null)
 const uploadMessage = ref('')
 const showFolderModal = ref(false)
 const newFolderName = ref('')
-const awsMode = ref(false)
+const awsMode = ref(true)
+const storageSummary = ref<StorageSummary | null>(null)
 let db: IDBDatabase | null = null
 
 function authHeaders() {
@@ -104,6 +117,12 @@ async function refreshStorage() {
   files.value = await getAll<CloudFile>('files')
 }
 
+async function refreshSubscription() {
+  storageSummary.value = await $fetch<StorageSummary>('/api/subscription', {
+    headers: authHeaders(),
+  })
+}
+
 function guessMime(name: string) {
   const extension = name.split('.').pop()?.toLowerCase()
   if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(extension || '')) return `image/${extension === 'jpg' ? 'jpeg' : extension}`
@@ -134,7 +153,17 @@ const currentFiles = computed(() => {
 })
 
 const itemCount = computed(() => currentFolders.value.length + currentFiles.value.length)
-const storedSize = computed(() => files.value.reduce((total, file) => total + file.size, 0))
+const storagePercent = computed(() => {
+  const summary = storageSummary.value
+  const quota = summary?.subscription?.quotaBytes || 0
+  return summary && quota ? Math.min(100, (summary.usedBytes / quota) * 100) : 0
+})
+const uploadBlocked = computed(() => {
+  const summary = storageSummary.value
+  return !summary?.subscription
+    || summary.subscription.status === 'expired'
+    || summary.usedBytes >= summary.subscription.quotaBytes
+})
 
 const breadcrumbs = computed(() => {
   if (currentFolder.value === '/') return [{ name: 'Meu armazenamento', path: '/' }]
@@ -150,18 +179,21 @@ const breadcrumbs = computed(() => {
 
 onMounted(async () => {
   const stored = localStorage.getItem('cloud-seller-session')
-  if (!stored) {
+  if (!stored || !localStorage.getItem('cloud-seller-id-token')) {
     navigateTo('/login')
     return
   }
   session.value = JSON.parse(stored) as UserSession
-  awsMode.value = Boolean(localStorage.getItem('cloud-seller-id-token'))
 
   try {
-    if (!awsMode.value) db = await openDatabase()
+    await refreshSubscription()
+    if (!storageSummary.value?.subscription) {
+      await navigateTo('/subscription')
+      return
+    }
     await refreshStorage()
   } catch {
-    uploadMessage.value = 'Não foi possível abrir o armazenamento local.'
+    uploadMessage.value = 'Não foi possível carregar o armazenamento da AWS.'
   }
 })
 
@@ -183,7 +215,6 @@ function goToBreadcrumb(path: string) {
 }
 
 async function createFolder() {
-  if (!db) return
   showFolderModal.value = true
   newFolderName.value = ''
   await nextTick()
@@ -240,27 +271,80 @@ async function uploadFiles(event: Event) {
 
   if (awsMode.value) {
     let added = 0
+    const failures: string[] = []
     for (const file of Array.from(input.files)) {
+      let key = ''
       try {
-        const result = await $fetch<{ url: string }>('/api/files/upload', {
+        const result = await $fetch<{ url: string; key: string }>('/api/files/upload', {
           method: 'POST',
           headers: authHeaders(),
-          body: { folder: currentFolder.value, name: file.name, mime: file.type },
+          body: { folder: currentFolder.value, name: file.name, mime: file.type, size: file.size },
         })
-        const upload = await fetch(result.url, {
-          method: 'PUT',
-          headers: { 'Content-Type': file.type || 'application/octet-stream' },
-          body: file,
-        })
+        key = result.key
+        const controller = new AbortController()
+        let heartbeatError = ''
+        let heartbeatInFlight = false
+        const heartbeatTimer = window.setInterval(async () => {
+          if (heartbeatInFlight) return
+          heartbeatInFlight = true
+          try {
+            await $fetch('/api/files/upload/heartbeat', {
+              method: 'POST',
+              headers: authHeaders(),
+              body: { key },
+            })
+          } catch (caught) {
+            heartbeatError = getAuthError(caught, 'A reserva do envio expirou.').message
+            controller.abort()
+          } finally {
+            heartbeatInFlight = false
+          }
+        }, 60_000)
+        let upload: Response
+        try {
+          upload = await fetch(result.url, {
+            method: 'PUT',
+            headers: { 'Content-Type': file.type || 'application/octet-stream' },
+            body: file,
+            signal: controller.signal,
+          })
+        } catch (caught) {
+          if (heartbeatError) throw new Error(heartbeatError)
+          throw caught
+        } finally {
+          window.clearInterval(heartbeatTimer)
+        }
+        if (heartbeatError) throw new Error(heartbeatError)
         if (!upload.ok) throw new Error('Upload rejected')
+        await $fetch('/api/files/upload/finalize', {
+          method: 'POST',
+          headers: authHeaders(),
+          body: { key, uploaded: true },
+        })
         added++
-      } catch {
-        uploadMessage.value = `Falha ao enviar "${file.name}".`
+      } catch (caught) {
+        const detail = getAuthError(caught, 'Não foi possível concluir o envio.').message
+        uploadMessage.value = `Falha ao enviar "${file.name}": ${detail}`
+        failures.push(`"${file.name}": ${detail}`)
+        if (key) {
+          try {
+            await $fetch('/api/files/upload/finalize', {
+              method: 'POST',
+              headers: authHeaders(),
+              body: { key, uploaded: false },
+            })
+          } catch (finalizeError) {
+            console.error('Could not release the failed upload reservation', finalizeError)
+          }
+        }
       }
     }
     input.value = ''
     await refreshStorage()
-    if (added) uploadMessage.value = `${added} arquivo(s) enviado(s) para a AWS.`
+    await refreshSubscription()
+    if (added) {
+      uploadMessage.value = `${added} arquivo(s) enviado(s) para a AWS.${failures.length ? ` Falhas: ${failures.join('; ')}.` : ''}`
+    }
     return
   }
 
@@ -399,8 +483,12 @@ function fileIconName(file: CloudFile): 'photo' | 'pdf' | 'spreadsheet' | 'docum
 
       <div class="storage-summary">
         <span>Armazenamento</span>
-        <strong>{{ formatSize(storedSize) }} <small>usados neste navegador</small></strong>
-        <div class="storage-bar"><span /></div>
+        <strong>{{ formatSize(storageSummary?.usedBytes || 0) }} <small>de {{ storageSummary?.subscription?.storage || '—' }}</small></strong>
+        <div class="storage-bar"><span :style="{ width: `${storagePercent}%` }" /></div>
+        <small v-if="storageSummary?.subscription?.status === 'trial'">
+          Teste até {{ new Intl.DateTimeFormat('pt-BR').format(storageSummary.subscription.trialEndsAt) }}
+        </small>
+        <small v-else-if="storageSummary?.subscription?.status === 'expired'">Teste expirado · uploads pausados</small>
       </div>
 
       <button class="logout-button" type="button" @click="logout">Sair da conta</button>
@@ -415,6 +503,17 @@ function fileIconName(file: CloudFile): 'photo' | 'pdf' | 'spreadsheet' | 'docum
         <div class="user-avatar">{{ session?.name?.charAt(0).toUpperCase() || 'U' }}</div>
       </header>
 
+      <div v-if="storageSummary?.subscription?.status === 'expired'" class="subscription-alert">
+        Seu teste terminou. Seus arquivos permanecem disponíveis, mas novos envios estão bloqueados.
+        <NuxtLink to="/subscription">Ver opções de renovação</NuxtLink>
+      </div>
+      <div
+        v-else-if="storageSummary?.subscription && storageSummary.usedBytes >= storageSummary.subscription.quotaBytes"
+        class="subscription-alert"
+      >
+        Você atingiu o limite do plano. Exclua arquivos para liberar espaço antes de enviar outros.
+      </div>
+
       <div class="dashboard-toolbar">
         <label class="file-search">
           <IconSymbol name="search" />
@@ -422,7 +521,15 @@ function fileIconName(file: CloudFile): 'photo' | 'pdf' | 'spreadsheet' | 'docum
         </label>
         <div class="dashboard-actions">
           <button class="folder-button" type="button" @click="createFolder"><IconSymbol name="plus" /> Nova pasta</button>
-          <button class="upload-button" type="button" @click="fileInput?.click()"><IconSymbol name="upload" /> Enviar arquivos</button>
+          <button
+            class="upload-button"
+            type="button"
+            :disabled="uploadBlocked"
+            :title="uploadBlocked ? 'Seu plano não permite novos envios neste momento.' : undefined"
+            @click="fileInput?.click()"
+          >
+            <IconSymbol name="upload" /> Enviar arquivos
+          </button>
           <input ref="fileInput" class="hidden-file-input" type="file" multiple @change="uploadFiles" />
         </div>
       </div>

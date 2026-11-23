@@ -11,6 +11,7 @@ export default defineNuxtConfig({
     s3Bucket: process.env.S3_BUCKET || '',
     s3AccessKeyId: process.env.S3_ACCESS_KEY_ID || '',
     s3SecretAccessKey: process.env.S3_SECRET_ACCESS_KEY || '',
+    dynamodbTable: process.env.DYNAMODB_TABLE || '',
     public: {
       cognitoDomain: process.env.NUXT_PUBLIC_COGNITO_DOMAIN || '',
       cognitoClientId: process.env.COGNITO_CLIENT_ID || '',

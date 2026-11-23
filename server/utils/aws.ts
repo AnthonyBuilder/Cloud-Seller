@@ -1,22 +1,29 @@
 import { S3Client } from '@aws-sdk/client-s3'
 
-export function createS3Client() {
+export function getAwsCredentials() {
   const config = useRuntimeConfig()
-  const region = process.env.S3_REGION || config.s3Region
-  const endpoint = process.env.S3_ENDPOINT || config.s3Endpoint
   const accessKeyId = process.env.S3_ACCESS_KEY_ID || config.s3AccessKeyId
   const secretAccessKey = process.env.S3_SECRET_ACCESS_KEY || config.s3SecretAccessKey
 
+  return accessKeyId && secretAccessKey
+    ? { accessKeyId, secretAccessKey }
+    : undefined
+}
+
+export function getAwsRegion() {
+  const config = useRuntimeConfig()
+  return process.env.S3_REGION || config.s3Region || process.env.AWS_REGION || 'us-east-2'
+}
+
+export function createS3Client() {
+  const config = useRuntimeConfig()
+  const endpoint = process.env.S3_ENDPOINT || config.s3Endpoint
+
   return new S3Client({
-    region,
+    region: getAwsRegion(),
     endpoint: endpoint || undefined,
     forcePathStyle: Boolean(endpoint),
-    credentials: accessKeyId && secretAccessKey
-      ? {
-          accessKeyId,
-          secretAccessKey,
-        }
-      : undefined,
+    credentials: getAwsCredentials(),
   })
 }
 
