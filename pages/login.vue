@@ -5,10 +5,16 @@ const config = useRuntimeConfig()
 const email = ref('')
 const password = ref('')
 const error = ref('')
+const notice = ref('')
 const loading = ref(false)
 
 onMounted(async () => {
-  const code = new URLSearchParams(window.location.search).get('code')
+  const params = new URLSearchParams(window.location.search)
+  const code = params.get('code')
+  if (params.get('registered') === '1') {
+    notice.value = 'Conta confirmada. Agora você já pode entrar.'
+  }
+
   if (code) {
     loading.value = true
     try {
@@ -84,10 +90,18 @@ async function login() {
         <p>Entre para acessar seus arquivos.</p>
       </div>
 
-      <form class="auth-form" @submit.prevent="login">
-        <template v-if="config.public.cognitoDomain">
-          <p class="auth-error">Entre com sua conta segura do AWS Cognito.</p>
-        </template>
+      <p v-if="notice" class="auth-success" role="status">{{ notice }}</p>
+      <p v-if="error" class="auth-error" role="alert">{{ error }}</p>
+
+      <div v-if="config.public.cognitoDomain" class="auth-form">
+        <p class="auth-hint">Entre com sua conta segura do AWS Cognito.</p>
+        <button class="button button-primary auth-submit" type="button" @click="login">
+          Entrar com AWS Cognito
+          <IconSymbol name="arrow-right" />
+        </button>
+      </div>
+
+      <form v-else class="auth-form" @submit.prevent="login">
         <label>
           E-mail
           <input v-model="email" type="email" placeholder="voce@email.com" autocomplete="email" required />
@@ -96,12 +110,16 @@ async function login() {
           Senha
           <input v-model="password" type="password" placeholder="Digite sua senha" autocomplete="current-password" required />
         </label>
-        <p v-if="error" class="auth-error" role="alert">{{ error }}</p>
         <button class="button button-primary auth-submit" type="submit" :disabled="loading">
-          {{ loading ? 'Entrando...' : (config.public.cognitoDomain ? 'Entrar com AWS Cognito' : 'Entrar na minha nuvem') }}
+          {{ loading ? 'Entrando...' : 'Entrar na minha nuvem' }}
           <IconSymbol v-if="!loading" name="arrow-right" />
         </button>
       </form>
+
+      <p v-if="config.public.cognitoDomain" class="auth-switch">
+        Ainda não tem uma conta?
+        <NuxtLink class="auth-link" to="/register">Criar conta</NuxtLink>
+      </p>
 
       <div v-if="!config.public.cognitoDomain" class="demo-access">
         <strong>Acesso de demonstração</strong>

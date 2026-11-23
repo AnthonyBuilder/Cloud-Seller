@@ -38,6 +38,9 @@ As rotas `/login` e `/dashboard` usam Cognito e permitem navegar por pastas, env
 baixar e excluir arquivos reais. Os arquivos são armazenados no S3 por APIs do servidor;
 o navegador não recebe credenciais AWS.
 
+Na rota `/register`, o cliente cria a conta com e-mail e senha, confirma o e-mail com
+o código enviado pelo Cognito e, em seguida, pode entrar pela rota `/login`.
+
 ## AWS Cognito e S3
 
 Configure estas variáveis no ambiente da aplicação:

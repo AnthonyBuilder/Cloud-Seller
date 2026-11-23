@@ -812,6 +812,56 @@ h1 span,
   font-size: 12px;
 }
 
+.auth-success {
+  margin: 20px 0 0;
+  padding: 11px 13px;
+  border: 1px solid #cde8d7;
+  border-radius: 9px;
+  background: #f0faf3;
+  color: #28643a;
+  font-size: 12px;
+}
+
+.auth-hint {
+  margin: 0;
+  color: #687087;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.auth-switch {
+  margin: 20px 0 0;
+  color: #687087;
+  font-size: 12px;
+  text-align: center;
+}
+
+.auth-link,
+.auth-link-button {
+  color: #1769d2;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.auth-link-button {
+  justify-self: center;
+  padding: 4px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.auth-link-button:disabled {
+  opacity: .65;
+  cursor: wait;
+}
+
+.auth-link:hover,
+.auth-link-button:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
 .auth-submit {
   width: 100%;
   margin-top: 4px;
