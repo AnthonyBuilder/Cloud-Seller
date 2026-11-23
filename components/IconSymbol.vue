@@ -22,6 +22,7 @@ type IconName =
   | 'plus'
   | 'close'
   | 'check'
+  | 'user'
 
 defineProps<{ name: IconName }>()
 </script>
@@ -125,6 +126,10 @@ defineProps<{ name: IconName }>()
     </template>
     <template v-else-if="name === 'check'">
       <path d="m5 12 4 4L19 6" />
+    </template>
+    <template v-else-if="name === 'user'">
+      <circle cx="12" cy="8" r="3.5" />
+      <path d="M5 20a7 7 0 0 1 14 0" />
     </template>
   </svg>
 </template>

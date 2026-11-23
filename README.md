@@ -31,6 +31,10 @@ A aplicação inclui páginas de login, escolha de armazenamento e arquivos, aut
 Cognito, armazenamento privado S3 e cotas por cliente. A cobrança recorrente ainda não
 está ativa: os preços e as credenciais/webhook do Mercado Pago precisam ser definidos.
 
+As páginas públicas incluem a home, `/como-funciona`, `/seguranca`, `/sobre` e `/contato`.
+O site e o painel adaptam a navegação e os controles para telas de celular. O contato é
+feito pelo endereço `cloudseller@icloud.com`.
+
 ## Login e arquivos
 
 Após o login Cognito, clientes sem plano são direcionados para `/subscription`, onde

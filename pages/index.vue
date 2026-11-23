@@ -33,22 +33,7 @@ const plans = [
 
 <template>
   <main>
-    <header class="site-header page-wrap">
-      <a class="brand" href="#" aria-label="Cloud Seller, início">
-        <span class="brand-mark" aria-hidden="true">
-          <IconSymbol name="cloud-upload" />
-        </span>
-        <span>cloud seller<span class="brand-dot">.</span></span>
-      </a>
-
-      <nav class="desktop-nav" aria-label="Navegação principal">
-        <a href="#beneficios">Benefícios</a>
-        <a href="#planos">Planos</a>
-        <a href="#seguranca">Segurança</a>
-      </nav>
-
-      <a class="button button-small button-outline header-action" href="/login">Acessar minha nuvem</a>
-    </header>
+    <SiteHeader />
 
     <section class="hero page-wrap">
       <div class="hero-copy">
@@ -129,6 +114,43 @@ const plans = [
       </div>
     </section>
 
+    <section class="steps-section page-wrap">
+      <div class="section-heading">
+        <span class="eyebrow">COMECE COM TRANQUILIDADE</span>
+        <h2>Três passos até seus arquivos.</h2>
+        <p>Do cadastro ao primeiro envio, você acompanha cada etapa.</p>
+      </div>
+      <div class="steps-grid">
+        <article class="info-card step-card">
+          <div class="step-card-top">
+            <span class="step-number">01</span>
+            <span class="info-card-icon"><IconSymbol name="share" /></span>
+          </div>
+          <h3>Crie sua conta</h3>
+          <p>Cadastre seu e-mail e confirme o código enviado para começar.</p>
+        </article>
+        <article class="info-card step-card">
+          <div class="step-card-top">
+            <span class="step-number">02</span>
+            <span class="info-card-icon"><IconSymbol name="hard-drive" /></span>
+          </div>
+          <h3>Escolha seu espaço</h3>
+          <p>Selecione uma capacidade e experimente por cinco dias, sem cobrança durante o teste.</p>
+        </article>
+        <article class="info-card step-card">
+          <div class="step-card-top">
+            <span class="step-number">03</span>
+            <span class="info-card-icon"><IconSymbol name="cloud-upload" /></span>
+          </div>
+          <h3>Organize seus arquivos</h3>
+          <p>Envie arquivos, crie pastas e baixe o que precisar pelo painel.</p>
+        </article>
+      </div>
+      <NuxtLink class="text-link steps-link" to="/como-funciona">
+        Veja todos os detalhes <IconSymbol name="arrow-right" />
+      </NuxtLink>
+    </section>
+
     <section id="planos" class="plans-section">
       <div class="page-wrap">
         <div class="section-heading plans-heading">
@@ -174,7 +196,7 @@ const plans = [
             <span>Disponibilidade e condições sob consulta</span>
             <a
               class="button button-addon"
-              href="mailto:contato@seudominio.com?subject=Interesse%20em%20backup%20autom%C3%A1tico"
+              href="mailto:cloudseller@icloud.com?subject=Interesse%20em%20backup%20autom%C3%A1tico"
             >
               Tenho interesse <IconSymbol name="arrow-right" />
             </a>
@@ -192,13 +214,6 @@ const plans = [
       <a class="button button-light" href="#planos">Ver planos <IconSymbol name="arrow-right" /></a>
     </section>
 
-    <footer class="site-footer page-wrap">
-      <a class="brand footer-brand" href="#" aria-label="Cloud Seller, início">
-        <span class="brand-mark" aria-hidden="true"><IconSymbol name="cloud-upload" /></span>
-        <span>cloud seller<span class="brand-dot">.</span></span>
-      </a>
-      <p>Um lugar seguro para o que importa.</p>
-      <span>© 2026 Cloud Seller. Feito para você.</span>
-    </footer>
+    <SiteFooter />
   </main>
 </template>
