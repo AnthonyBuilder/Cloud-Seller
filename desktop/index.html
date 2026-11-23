@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:" />
+    <title>Cloud Seller Backup</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="Cloud Seller Backup">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="M6.8 19H18a4.25 4.25 0 0 0 .4-8.48A6.4 6.4 0 0 0 6 8.6 5.2 5.2 0 0 0 6.8 19Z" />
+            <path d="M12 16V9m0 0-3 3m3-3 3 3" />
+          </svg>
+        </span>
+        <span>cloud seller <small>BACKUP</small></span>
+      </a>
+      <button id="dashboard-button" class="button button-outline" type="button">Abrir minha nuvem</button>
+    </header>
+
+    <main>
+      <section class="intro">
+        <div>
+          <span class="eyebrow">BACKUP AUTOMÁTICO</span>
+          <h1>Seus arquivos protegidos,<br />sem esforço.</h1>
+          <p>Escolha as pastas. O Cloud Seller Backup cuida do restante e permite restaurar seus arquivos quando precisar.</p>
+        </div>
+        <div class="status-card">
+          <span id="status-dot" class="status-dot" />
+          <div>
+            <strong id="account-status">Conta desconectada</strong>
+            <span id="status-message">Conecte sua conta para começar.</span>
+          </div>
+          <button id="login-button" class="button button-primary" type="button">Conectar conta</button>
+          <button id="logout-button" class="text-button hidden" type="button">Desconectar</button>
+        </div>
+      </section>
+
+      <div id="notice" class="notice hidden" role="status" aria-live="polite" />
+
+      <section class="panel setup-panel">
+        <div class="panel-heading">
+          <div>
+            <span class="step">01</span>
+            <h2>Configure seu backup</h2>
+          </div>
+          <button id="save-button" class="button button-outline" type="button">Salvar configurações</button>
+        </div>
+
+        <label class="field">
+          Servidor Cloud Seller
+          <input id="server-url" type="url" autocomplete="url" placeholder="https://seu-dominio.com" />
+        </label>
+
+        <label class="field">
+          Nome deste computador
+          <input id="device-name" type="text" maxlength="60" placeholder="Meu computador" />
+        </label>
+
+        <div class="folder-heading">
+          <div>
+            <strong>Pastas para proteger</strong>
+            <p>Os arquivos dessas pastas serão enviados para sua conta.</p>
+          </div>
+          <button id="add-folder-button" class="button button-primary" type="button">Adicionar pastas</button>
+        </div>
+        <ul id="folder-list" class="folder-list" />
+        <p id="folder-empty" class="empty-note">Nenhuma pasta selecionada.</p>
+
+        <fieldset class="schedule-options">
+          <legend>Quando fazer backup</legend>
+          <label><input id="backup-on-change" type="checkbox" /> Ao detectar alterações</label>
+          <label><input id="backup-daily" type="checkbox" /> Uma vez por dia</label>
+        </fieldset>
+        <label class="launch-option"><input id="start-at-login" type="checkbox" /> Iniciar com o computador e continuar em segundo plano</label>
+
+        <div class="actions-row">
+          <button id="backup-now-button" class="button button-primary" type="button" disabled>Fazer backup agora</button>
+          <span id="backup-progress" class="muted">O backup será iniciado após conectar a conta.</span>
+        </div>
+      </section>
+
+      <section class="panel restore-panel">
+        <div class="panel-heading">
+          <div>
+            <span class="step">02</span>
+            <h2>Restaurar arquivos</h2>
+          </div>
+          <button id="refresh-backups-button" class="button button-outline" type="button" disabled>Ver backups</button>
+        </div>
+        <p class="muted">Selecione uma ou mais cópias deste computador para restaurar em uma pasta local.</p>
+        <ul id="backup-list" class="backup-list" />
+        <p id="backup-empty" class="empty-note">Conecte sua conta para localizar os backups.</p>
+        <button id="restore-button" class="button button-primary" type="button" disabled>Restaurar selecionados</button>
+      </section>
+
+      <footer>
+        <span>Os tokens de acesso são armazenados criptografados pelo sistema operacional.</span>
+        <span>Pastas <code>.git</code>, <code>node_modules</code> e <code>.DS_Store</code> são ignoradas.</span>
+      </footer>
+    </main>
+    <script src="renderer.js"></script>
+  </body>
+</html>

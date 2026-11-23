@@ -1,0 +1,10 @@
+.nuxt
+.output
+.vercel
+node_modules
+dist
+.env
+.env.*
+!.env.example
+/desktop/release
+/desktop/app-config.json

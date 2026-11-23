@@ -1,0 +1,19 @@
+appId: com.cloudseller.backup
+productName: Cloud Seller Backup
+directories:
+  output: release
+files:
+  - "**/*"
+  - "!release/**"
+  - "!node_modules/.cache/**"
+mac:
+  category: public.app-category.utilities
+  target:
+    - dmg
+win:
+  target:
+    - nsis
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
