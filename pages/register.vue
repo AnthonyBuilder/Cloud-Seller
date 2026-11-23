@@ -1,24 +1,27 @@
 <script setup lang="ts">
+import { getAuthError } from '~/utils/auth-errors'
+
 useHead({ title: 'Criar conta - Cloud Seller' })
 
+const route = useRoute()
 const email = ref('')
 const password = ref('')
+const showPassword = ref(false)
 const confirmationCode = ref('')
 const step = ref<'signup' | 'confirm'>('signup')
 const error = ref('')
 const notice = ref('')
 const loading = ref(false)
 
-function getErrorMessage(caught: unknown, fallback: string) {
-  if (typeof caught === 'object' && caught !== null && 'data' in caught) {
-    const data = caught.data
-    if (typeof data === 'object' && data !== null) {
-      if ('statusMessage' in data && typeof data.statusMessage === 'string') return data.statusMessage
-      if ('message' in data && typeof data.message === 'string') return data.message
-    }
-  }
+if (route.query.confirm === '1' && typeof route.query.email === 'string') {
+  email.value = route.query.email.trim().toLowerCase()
+  step.value = 'confirm'
+  notice.value = 'Confirme seu e-mail para acessar sua conta.'
+}
 
-  return fallback
+function showError(caught: unknown, fallback: string) {
+  const apiError = getAuthError(caught, fallback)
+  error.value = apiError.message
 }
 
 async function createAccount() {
@@ -46,7 +49,7 @@ async function createAccount() {
     }
     notice.value = `Enviamos um código de confirmação para ${result.destination}.`
   } catch (caught) {
-    error.value = getErrorMessage(caught, 'Não foi possível criar a conta. Tente novamente.')
+    showError(caught, 'Não foi possível criar a conta. Tente novamente.')
   } finally {
     loading.value = false
   }
@@ -64,7 +67,7 @@ async function confirmAccount() {
     })
     await navigateTo('/login?registered=1')
   } catch (caught) {
-    error.value = getErrorMessage(caught, 'Não foi possível confirmar a conta. Confira o código e tente novamente.')
+    showError(caught, 'Não foi possível confirmar a conta. Confira o código e tente novamente.')
   } finally {
     loading.value = false
   }
@@ -82,7 +85,7 @@ async function resendCode() {
     })
     notice.value = `Enviamos um novo código para ${result.destination}.`
   } catch (caught) {
-    error.value = getErrorMessage(caught, 'Não foi possível enviar outro código. Tente novamente.')
+    showError(caught, 'Não foi possível enviar outro código. Tente novamente.')
   } finally {
     loading.value = false
   }
@@ -116,20 +119,31 @@ async function resendCode() {
             type="email"
             placeholder="voce@email.com"
             autocomplete="email"
+            autocapitalize="off"
             maxlength="254"
             required
           />
         </label>
         <label>
           Senha
-          <input
-            v-model="password"
-            type="password"
-            placeholder="Crie uma senha"
-            autocomplete="new-password"
-            minlength="12"
-            required
-          />
+          <span class="auth-password-field">
+            <input
+              v-model="password"
+              :type="showPassword ? 'text' : 'password'"
+              placeholder="Crie uma senha"
+              autocomplete="new-password"
+              minlength="12"
+              required
+            />
+            <button
+              class="auth-password-toggle"
+              type="button"
+              :aria-pressed="showPassword"
+              @click="showPassword = !showPassword"
+            >
+              {{ showPassword ? 'Ocultar' : 'Mostrar' }}
+            </button>
+          </span>
         </label>
         <p class="auth-hint">Use pelo menos 12 caracteres, incluindo letras maiúsculas, minúsculas e números.</p>
         <button class="button button-primary auth-submit" type="submit" :disabled="loading">

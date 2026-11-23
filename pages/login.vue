@@ -1,11 +1,15 @@
 <script setup lang="ts">
+import { getAuthError } from '~/utils/auth-errors'
+
 useHead({ title: 'Entrar - Cloud Seller' })
 
 const config = useRuntimeConfig()
 const email = ref('')
 const password = ref('')
+const showPassword = ref(false)
 const error = ref('')
 const notice = ref('')
+const confirmationRequired = ref(false)
 const loading = ref(false)
 
 onMounted(async () => {
@@ -37,40 +41,48 @@ onMounted(async () => {
     return
   }
 
-  if (import.meta.client && localStorage.getItem('cloud-seller-session')) {
+  if (import.meta.client && localStorage.getItem('cloud-seller-session') && localStorage.getItem('cloud-seller-id-token')) {
     navigateTo('/dashboard')
   }
 })
 
 async function login() {
   error.value = ''
+  notice.value = ''
+  confirmationRequired.value = false
+  const normalizedEmail = email.value.trim().toLowerCase()
 
-  if (config.public.cognitoDomain) {
-    const params = new URLSearchParams({
-      client_id: config.public.cognitoClientId,
-      response_type: 'code',
-      scope: 'openid email profile',
-      redirect_uri: config.public.cognitoRedirectUri,
-    })
-    window.location.assign(`https://${config.public.cognitoDomain}/login?${params}`)
+  if (!config.public.cognitoClientId) {
+    error.value = 'O login está temporariamente indisponível. Tente novamente mais tarde.'
     return
   }
 
-  if (!email.value.includes('@') || password.value.length < 6) {
-    error.value = 'Informe um e-mail válido e uma senha com pelo menos 6 caracteres.'
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail) || !password.value) {
+    error.value = 'Informe um e-mail válido e sua senha.'
     return
   }
 
   loading.value = true
-  await new Promise(resolve => setTimeout(resolve, 450))
-
-  localStorage.setItem('cloud-seller-session', JSON.stringify({
-    name: email.value.split('@')[0],
-    email: email.value,
-  }))
-
-  loading.value = false
-  navigateTo('/dashboard')
+  try {
+    const response = await $fetch<{ idToken: string; accessToken: string }>('/api/auth/login', {
+      method: 'POST',
+      body: { email: normalizedEmail, password: password.value },
+    })
+    localStorage.setItem('cloud-seller-id-token', response.idToken)
+    localStorage.setItem('cloud-seller-access-token', response.accessToken)
+    localStorage.setItem('cloud-seller-session', JSON.stringify({
+      name: normalizedEmail.split('@')[0],
+      email: normalizedEmail,
+    }))
+    password.value = ''
+    await navigateTo('/dashboard')
+  } catch (caught) {
+    const apiError = getAuthError(caught, 'Não foi possível entrar. Tente novamente.')
+    error.value = apiError.message
+    confirmationRequired.value = apiError.code === 'USER_NOT_CONFIRMED'
+  } finally {
+    loading.value = false
+  }
 }
 </script>
 
@@ -93,22 +105,38 @@ async function login() {
       <p v-if="notice" class="auth-success" role="status">{{ notice }}</p>
       <p v-if="error" class="auth-error" role="alert">{{ error }}</p>
 
-      <div v-if="config.public.cognitoDomain" class="auth-form">
-        <p class="auth-hint">Entre com sua conta segura do AWS Cognito.</p>
-        <button class="button button-primary auth-submit" type="button" @click="login">
-          Entrar com AWS Cognito
-          <IconSymbol name="arrow-right" />
-        </button>
-      </div>
-
-      <form v-else class="auth-form" @submit.prevent="login">
+      <form v-if="config.public.cognitoClientId" class="auth-form" @submit.prevent="login">
         <label>
           E-mail
-          <input v-model="email" type="email" placeholder="voce@email.com" autocomplete="email" required />
+          <input
+            v-model="email"
+            type="email"
+            placeholder="voce@email.com"
+            autocomplete="username"
+            autocapitalize="off"
+            maxlength="254"
+            required
+          />
         </label>
         <label>
           Senha
-          <input v-model="password" type="password" placeholder="Digite sua senha" autocomplete="current-password" required />
+          <span class="auth-password-field">
+            <input
+              v-model="password"
+              :type="showPassword ? 'text' : 'password'"
+              placeholder="Digite sua senha"
+              autocomplete="current-password"
+              required
+            />
+            <button
+              class="auth-password-toggle"
+              type="button"
+              :aria-pressed="showPassword"
+              @click="showPassword = !showPassword"
+            >
+              {{ showPassword ? 'Ocultar' : 'Mostrar' }}
+            </button>
+          </span>
         </label>
         <button class="button button-primary auth-submit" type="submit" :disabled="loading">
           {{ loading ? 'Entrando...' : 'Entrar na minha nuvem' }}
@@ -116,15 +144,23 @@ async function login() {
         </button>
       </form>
 
-      <p v-if="config.public.cognitoDomain" class="auth-switch">
+      <p v-else class="auth-error" role="status">
+        O login está temporariamente indisponível. Tente novamente mais tarde.
+      </p>
+
+      <p v-if="confirmationRequired" class="auth-switch">
+        <NuxtLink
+          class="auth-link"
+          :to="{ path: '/register', query: { confirm: '1', email: email.trim().toLowerCase() } }"
+        >
+          Confirmar meu e-mail
+        </NuxtLink>
+      </p>
+
+      <p v-if="config.public.cognitoClientId" class="auth-switch">
         Ainda não tem uma conta?
         <NuxtLink class="auth-link" to="/register">Criar conta</NuxtLink>
       </p>
-
-      <div v-if="!config.public.cognitoDomain" class="demo-access">
-        <strong>Acesso de demonstração</strong>
-        <span>Qualquer e-mail válido e senha com 6 caracteres.</span>
-      </div>
     </section>
 
     <p class="auth-footer">© 2026 Cloud Seller</p>

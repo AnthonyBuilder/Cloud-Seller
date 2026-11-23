@@ -800,6 +800,29 @@ h1 span,
   padding: 0 14px;
 }
 
+.auth-password-field {
+  position: relative;
+}
+
+.auth-password-field input {
+  padding-right: 76px;
+}
+
+.auth-password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  padding: 4px;
+  border: 0;
+  background: transparent;
+  color: #1769d2;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  transform: translateY(-50%);
+  cursor: pointer;
+}
+
 .auth-form input:focus,
 .file-search input:focus {
   border-color: #6248e8;

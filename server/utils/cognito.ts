@@ -36,9 +36,17 @@ const cognitoErrors: Record<string, { statusCode: number; statusMessage: string 
     statusCode: 400,
     statusMessage: 'A conta já pode estar confirmada. Tente entrar ou solicite um novo código.',
   },
+  PasswordResetRequiredException: {
+    statusCode: 403,
+    statusMessage: 'É necessário redefinir sua senha antes de entrar.',
+  },
   TooManyRequestsException: {
     statusCode: 429,
     statusMessage: 'Muitas tentativas. Aguarde alguns minutos e tente novamente.',
+  },
+  UserNotConfirmedException: {
+    statusCode: 403,
+    statusMessage: 'Confirme seu e-mail antes de entrar.',
   },
   UserNotFoundException: {
     statusCode: 400,
@@ -80,9 +88,14 @@ export function throwCognitoServiceError(error: unknown, operation: string): nev
     throw error
   }
 
-  const response = cognitoErrors[error.name]
+  const response = operation === 'login' && error.name === 'NotAuthorizedException'
+    ? { statusCode: 401, statusMessage: 'E-mail ou senha incorretos.' }
+    : cognitoErrors[error.name]
   if (response) {
-    throw createError(response)
+    throw createError({
+      ...response,
+      ...(error.name === 'UserNotConfirmedException' ? { data: { code: 'USER_NOT_CONFIRMED' } } : {}),
+    })
   }
 
   console.error(`[auth/${operation}] Cognito request failed`, {
