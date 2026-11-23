@@ -1,6 +1,12 @@
 export default defineNuxtConfig({
   compatibilityDate: '2025-03-01',
   devtools: { enabled: true },
+  app: {
+    pageTransition: {
+      name: 'page',
+      mode: 'out-in',
+    },
+  },
   css: ['~/assets/css/main.css'],
   runtimeConfig: {
     cognitoRegion: process.env.COGNITO_REGION || 'us-east-1',
