@@ -7,7 +7,7 @@ export default defineEventHandler(async (event) => {
   const code = typeof body.code === 'string' ? body.code.trim() : ''
 
   if (!/^\d{6}$/.test(code)) {
-    throw createError({ statusCode: 400, statusMessage: 'Informe o código de confirmação de 6 dígitos.' })
+    throw createError({ statusCode: 400, message: 'Informe o código de confirmação de 6 dígitos.' })
   }
 
   const { client, clientId } = getCognitoPublicClient()

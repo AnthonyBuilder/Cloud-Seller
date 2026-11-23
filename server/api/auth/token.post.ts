@@ -1,14 +1,15 @@
 export default defineEventHandler(async (event) => {
   const config = useRuntimeConfig()
   const body = await readBody<{ code?: string }>(event)
-  if (!body.code || !config.public.cognitoDomain || !config.public.cognitoClientId) {
+  const clientId = process.env.COGNITO_CLIENT_ID || config.public.cognitoClientId
+  if (!body.code || !config.public.cognitoDomain || !clientId) {
     throw createError({ statusCode: 400, statusMessage: 'Cognito configuration is incomplete' })
   }
 
   const tokenUrl = `https://${config.public.cognitoDomain}/oauth2/token`
   const params = new URLSearchParams({
     grant_type: 'authorization_code',
-    client_id: config.public.cognitoClientId,
+    client_id: clientId,
     code: body.code,
     redirect_uri: config.public.cognitoRedirectUri,
   })
@@ -20,7 +21,7 @@ export default defineEventHandler(async (event) => {
   })
 
   if (!response.ok) {
-    throw createError({ statusCode: 401, statusMessage: 'Unable to exchange Cognito authorization code' })
+    throw createError({ statusCode: 401, message: 'Unable to exchange Cognito authorization code' })
   }
 
   const tokens = await response.json() as {

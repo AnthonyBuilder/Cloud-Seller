@@ -3,8 +3,11 @@ import { createRemoteJWKSet, jwtVerify } from 'jose'
 export async function requireUser(event: Parameters<typeof getHeader>[0]) {
   const config = useRuntimeConfig()
   const authorization = getHeader(event, 'authorization')
+  const userPoolId = process.env.COGNITO_USER_POOL_ID || config.cognitoUserPoolId
+  const region = process.env.COGNITO_REGION || config.cognitoRegion
+  const clientId = process.env.COGNITO_CLIENT_ID || config.cognitoClientId
 
-  if (!config.cognitoUserPoolId) {
+  if (!userPoolId || !region || !clientId) {
     throw createError({ statusCode: 503, statusMessage: 'Cognito is not configured' })
   }
 
@@ -13,14 +16,13 @@ export async function requireUser(event: Parameters<typeof getHeader>[0]) {
   }
 
   const token = authorization.slice('Bearer '.length)
-  const region = config.cognitoRegion
-  const issuer = `https://cognito-idp.${region}.amazonaws.com/${config.cognitoUserPoolId}`
+  const issuer = `https://cognito-idp.${region}.amazonaws.com/${userPoolId}`
   const jwks = createRemoteJWKSet(new URL(`${issuer}/.well-known/jwks.json`))
 
   try {
     const { payload } = await jwtVerify(token, jwks, {
       issuer,
-      audience: config.cognitoClientId || undefined,
+      audience: clientId,
     })
 
     if (!payload.sub) {

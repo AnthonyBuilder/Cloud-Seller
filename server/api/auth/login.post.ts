@@ -25,7 +25,7 @@ export default defineEventHandler(async (event) => {
     if (!authentication?.IdToken || !authentication.AccessToken) {
       throw createError({
         statusCode: 409,
-        statusMessage: 'A conta exige uma etapa adicional de autenticação não disponível.',
+        message: 'A conta exige uma etapa adicional de autenticação não disponível.',
       })
     }
 

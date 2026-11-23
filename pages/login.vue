@@ -3,7 +3,6 @@ import { getAuthError } from '~/utils/auth-errors'
 
 useHead({ title: 'Entrar - Cloud Seller' })
 
-const config = useRuntimeConfig()
 const email = ref('')
 const password = ref('')
 const showPassword = ref(false)
@@ -51,11 +50,6 @@ async function login() {
   notice.value = ''
   confirmationRequired.value = false
   const normalizedEmail = email.value.trim().toLowerCase()
-
-  if (!config.public.cognitoClientId) {
-    error.value = 'O login está temporariamente indisponível. Tente novamente mais tarde.'
-    return
-  }
 
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail) || !password.value) {
     error.value = 'Informe um e-mail válido e sua senha.'
@@ -105,7 +99,7 @@ async function login() {
       <p v-if="notice" class="auth-success" role="status">{{ notice }}</p>
       <p v-if="error" class="auth-error" role="alert">{{ error }}</p>
 
-      <form v-if="config.public.cognitoClientId" class="auth-form" @submit.prevent="login">
+      <form class="auth-form" @submit.prevent="login">
         <label>
           E-mail
           <input
@@ -144,10 +138,6 @@ async function login() {
         </button>
       </form>
 
-      <p v-else class="auth-error" role="status">
-        O login está temporariamente indisponível. Tente novamente mais tarde.
-      </p>
-
       <p v-if="confirmationRequired" class="auth-switch">
         <NuxtLink
           class="auth-link"
@@ -157,7 +147,7 @@ async function login() {
         </NuxtLink>
       </p>
 
-      <p v-if="config.public.cognitoClientId" class="auth-switch">
+      <p class="auth-switch">
         Ainda não tem uma conta?
         <NuxtLink class="auth-link" to="/register">Criar conta</NuxtLink>
       </p>

@@ -9,7 +9,7 @@ export default defineEventHandler(async (event) => {
   if (password.length < 12 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/[0-9]/.test(password)) {
     throw createError({
       statusCode: 400,
-      statusMessage: 'A senha deve ter pelo menos 12 caracteres, com letras maiúsculas, minúsculas e números.',
+      message: 'A senha deve ter pelo menos 12 caracteres, com letras maiúsculas, minúsculas e números.',
     })
   }
 

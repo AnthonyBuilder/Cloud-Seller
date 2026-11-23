@@ -25,7 +25,7 @@ export default defineNuxtConfig({
   nitro: {
     preset: 'vercel',
     externals: {
-      inline: ['parse5', 'entities'],
+      inline: ['unhead', 'parse5', 'entities'],
     },
   },
 })

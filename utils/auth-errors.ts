@@ -12,13 +12,15 @@ export function getAuthError(caught: unknown, fallback: string) {
     : data
 
   return {
-    message: typeof data?.statusMessage === 'string'
-      ? data.statusMessage
-      : typeof data?.message === 'string'
+    message: typeof data?.message === 'string'
         ? data.message
-        : typeof error.statusMessage === 'string'
-          ? error.statusMessage
-          : fallback,
+        : typeof data?.statusMessage === 'string'
+          ? data.statusMessage
+          : typeof error.message === 'string'
+            ? error.message
+            : typeof error.statusMessage === 'string'
+              ? error.statusMessage
+              : fallback,
     code: typeof details?.code === 'string' ? details.code : undefined,
   }
 }
