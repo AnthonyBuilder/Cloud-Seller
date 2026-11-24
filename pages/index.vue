@@ -2,7 +2,7 @@
 useHead({
   title: 'Cloud Seller',
   meta: [
-    { name: 'description', content: 'Cloud Seller - seus arquivos seguros em um só lugar.' },
+    { name: 'description', content: 'Cloud Seller - seus arquivos seguros e sempre ao seu alcance.' },
   ],
 })
 
@@ -35,16 +35,15 @@ const plans = [
 </script>
 
 <template>
-  <main>
+  <main class="home-page">
     <SiteHeader />
 
     <section class="hero page-wrap">
       <div class="hero-copy">
         <div class="eyebrow"><span class="status-dot" /> SEUS ARQUIVOS, EM UM SÓ LUGAR</div>
-        <h1>Mais espaço para o que <span>importa.</span></h1>
+        <h1>Seus arquivos,<br /><span>sempre à mão.</span></h1>
         <p class="hero-description">
-          Guarde fotos, documentos e projetos com segurança. Acesse tudo de qualquer lugar,
-          quando precisar.
+          Guarde fotos, documentos e projetos com segurança — e acesse tudo de onde estiver.
         </p>
         <div class="hero-actions">
           <a class="button button-primary" href="#planos">
