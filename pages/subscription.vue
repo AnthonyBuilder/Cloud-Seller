@@ -157,97 +157,113 @@ async function refreshPaymentStatus() {
       <p v-if="loading" class="subscription-loading">Carregando seu armazenamento...</p>
 
       <template v-else-if="subscription">
-        <article class="subscription-status-card">
-          <div>
-            <span>Plano atual</span>
-            <strong>{{ subscription.name }} · {{ subscription.storage }}</strong>
-            <small>US$ {{ subscription.priceUsd.toFixed(2) }}/mês · {{ formatSize(usedBytes) }} utilizados</small>
-          </div>
-          <span class="subscription-status" :class="`status-${subscription.status}`">
-            {{ subscription.status === 'active' ? 'Ativo' : subscription.status === 'past_due' ? 'Pagamento atrasado' : subscription.status === 'canceled' ? 'Cancelado' : 'Pagamento pendente' }}
-          </span>
-        </article>
-        <p class="subscription-payment-note">
-          {{ subscription.status === 'active'
-            ? 'Sua assinatura recorrente está ativa e seus arquivos permanecem disponíveis.'
-            : subscription.status === 'past_due'
-              ? 'Atualize o pagamento no portal seguro do Stripe para manter sua assinatura.'
-              : subscription.status === 'canceled'
-                ? 'Seu plano foi cancelado. Você pode reativá-lo escolhendo um plano e concluindo o pagamento.'
-                : 'Conclua o pagamento no Stripe para liberar os envios.' }}
-        </p>
-        <NuxtLink
-          v-if="subscription.status === 'active'"
-          class="button button-primary subscription-dashboard-link"
-          to="/dashboard"
+        <div
+          class="subscription-plan-layout"
+          :class="{ 'has-other-plans': subscription.status === 'incomplete' || subscription.status === 'canceled' }"
         >
-          Acessar meus arquivos <IconSymbol name="arrow-right" />
-        </NuxtLink>
-        <button
-          v-if="subscription.status === 'active' || subscription.status === 'past_due'"
-          class="button button-plan subscription-dashboard-link"
-          type="button"
-          :disabled="openingPortal"
-          @click="openBillingPortal"
-        >
-          {{ openingPortal ? 'Abrindo Stripe...' : subscription.status === 'past_due' ? 'Atualizar pagamento' : 'Gerenciar assinatura' }}
-        </button>
-        <NuxtLink
-          v-else-if="subscription.status === 'incomplete'"
-          class="button button-primary subscription-dashboard-link"
-          :to="{ path: '/payment', query: { plan: subscription.planId } }"
-        >
-          Continuar pagamento <IconSymbol name="arrow-right" />
-        </NuxtLink>
-        <NuxtLink
-          v-else
-          class="button button-primary subscription-dashboard-link"
-          :to="{ path: '/payment', query: { plan: subscription.planId } }"
-        >
-          Reativar plano <IconSymbol name="arrow-right" />
-        </NuxtLink>
-        <button
-          v-if="subscription.status !== 'active'"
-          class="subscription-refresh-button"
-          type="button"
-          :disabled="refreshing"
-          @click="refreshPaymentStatus"
-        >
-          {{ refreshing ? 'Atualizando...' : 'Atualizar status do pagamento' }}
-        </button>
-
-        <section
-          v-if="subscription.status === 'incomplete' || subscription.status === 'canceled'"
-          class="other-plans-section"
-        >
-          <header class="other-plans-heading">
-            <span class="eyebrow">MAIS OPÇÕES</span>
-            <h2>Prefere outro plano?</h2>
-            <p>Escolha outra capacidade antes de continuar para o pagamento.</p>
-          </header>
-          <div class="subscription-plan-grid">
-            <article
-              v-for="plan in otherPlans"
-              :key="plan.id"
-              class="plan-card subscription-plan"
-              :class="{ 'plan-featured': plan.id === 'pro' }"
-            >
-              <span v-if="plan.id === 'pro'" class="popular-label">MAIS ESCOLHIDO</span>
-              <h2>{{ plan.name }}</h2>
-              <p class="plan-price">US$ {{ plan.priceUsd.toFixed(2) }}<small>/mês</small></p>
-              <div class="plan-storage"><IconSymbol name="cloud-upload" /> {{ plan.storage }} de armazenamento</div>
-              <button
-                class="button"
-                :class="plan.id === 'pro' ? 'button-primary' : 'button-plan'"
-                type="button"
-                :disabled="Boolean(selecting)"
-                @click="choosePlan(plan)"
-              >
-                {{ selecting === plan.id ? 'Continuando...' : 'Escolher este plano' }}
-              </button>
+          <div class="subscription-current-column">
+            <article class="subscription-status-card">
+              <div>
+                <span>Plano atual</span>
+                <strong>{{ subscription.name }} · {{ subscription.storage }}</strong>
+                <small>US$ {{ subscription.priceUsd.toFixed(2) }}/mês · {{ formatSize(usedBytes) }} utilizados</small>
+              </div>
+              <span class="subscription-status" :class="`status-${subscription.status}`">
+                {{ subscription.status === 'active' ? 'Ativo' : subscription.status === 'past_due' ? 'Pagamento atrasado' : subscription.status === 'canceled' ? 'Cancelado' : 'Pagamento pendente' }}
+              </span>
             </article>
+            <p class="subscription-payment-note">
+              {{ subscription.status === 'active'
+                ? 'Sua assinatura recorrente está ativa e seus arquivos permanecem disponíveis.'
+                : subscription.status === 'past_due'
+                  ? 'Atualize o pagamento no portal seguro do Stripe para manter sua assinatura.'
+                  : subscription.status === 'canceled'
+                    ? 'Seu plano foi cancelado. Você pode reativá-lo escolhendo um plano e concluindo o pagamento.'
+                    : 'Conclua o pagamento no Stripe para liberar os envios.' }}
+            </p>
+            <div class="subscription-actions">
+              <NuxtLink
+                v-if="subscription.status === 'active'"
+                class="button button-primary subscription-dashboard-link"
+                to="/dashboard"
+              >
+                Acessar meus arquivos <IconSymbol name="arrow-right" />
+              </NuxtLink>
+              <button
+                v-if="subscription.status === 'active' || subscription.status === 'past_due'"
+                class="button button-plan subscription-dashboard-link"
+                type="button"
+                :disabled="openingPortal"
+                @click="openBillingPortal"
+              >
+                {{ openingPortal ? 'Abrindo Stripe...' : subscription.status === 'past_due' ? 'Atualizar pagamento' : 'Gerenciar assinatura' }}
+                <IconSymbol name="credit-card" />
+              </button>
+              <NuxtLink
+                v-else-if="subscription.status === 'incomplete'"
+                class="button button-primary subscription-dashboard-link"
+                :to="{ path: '/payment', query: { plan: subscription.planId } }"
+              >
+                Continuar pagamento <IconSymbol name="credit-card" />
+              </NuxtLink>
+              <NuxtLink
+                v-else
+                class="button button-primary subscription-dashboard-link"
+                :to="{ path: '/payment', query: { plan: subscription.planId } }"
+              >
+                Reativar plano <IconSymbol name="credit-card" />
+              </NuxtLink>
+              <button
+                v-if="subscription.status !== 'active'"
+                class="subscription-refresh-button"
+                type="button"
+                :disabled="refreshing"
+                @click="refreshPaymentStatus"
+              >
+                <IconSymbol name="refresh" />
+                {{ refreshing ? 'Atualizando...' : 'Atualizar status do pagamento' }}
+              </button>
+            </div>
           </div>
-        </section>
+
+          <section
+            v-if="subscription.status === 'incomplete' || subscription.status === 'canceled'"
+            class="other-plans-section"
+          >
+            <header class="other-plans-heading">
+              <span class="eyebrow">OUTRAS OPÇÕES</span>
+              <h2>Outros planos</h2>
+              <p>Encontre o espaço ideal para você.</p>
+            </header>
+            <div class="subscription-plan-grid">
+              <article
+                v-for="plan in otherPlans"
+                :key="plan.id"
+                class="plan-card subscription-plan plan-alternative"
+              >
+                <div class="plan-alternative-heading">
+                  <span class="plan-alternative-icon" aria-hidden="true">
+                    <IconSymbol name="hard-drive" />
+                  </span>
+                  <div>
+                    <h2>{{ plan.name }}</h2>
+                    <span>{{ plan.storage }} de armazenamento</span>
+                  </div>
+                </div>
+                <p class="plan-price"><span>US$</span> {{ plan.priceUsd.toFixed(2) }}<small>/mês</small></p>
+                <button
+                  class="button button-plan"
+                  type="button"
+                  :disabled="Boolean(selecting)"
+                  @click="choosePlan(plan)"
+                >
+                  {{ selecting === plan.id ? 'Continuando...' : 'Escolher plano' }}
+                  <IconSymbol v-if="selecting !== plan.id" name="arrow-right" />
+                </button>
+              </article>
+            </div>
+          </section>
+        </div>
       </template>
 
       <div v-else-if="!loading" class="subscription-plan-grid">

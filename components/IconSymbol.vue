@@ -5,6 +5,8 @@ type IconName =
   | 'photo'
   | 'arrow-right'
   | 'arrow-down'
+  | 'credit-card'
+  | 'refresh'
   | 'laptop'
   | 'shield'
   | 'hard-drive'
@@ -54,6 +56,14 @@ defineProps<{ name: IconName }>()
     </template>
     <template v-else-if="name === 'arrow-down'">
       <path d="M12 4v15m-6-6 6 6 6-6" />
+    </template>
+    <template v-else-if="name === 'credit-card'">
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="M3 10h18m-14 5h4" />
+    </template>
+    <template v-else-if="name === 'refresh'">
+      <path d="M20 7v5h-5" />
+      <path d="M20 12a8 8 0 1 1-2.34-5.66L20 9" />
     </template>
     <template v-else-if="name === 'laptop'">
       <rect x="4" y="4" width="16" height="12" rx="1.5" />
