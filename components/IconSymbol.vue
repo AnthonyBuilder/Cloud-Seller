@@ -7,6 +7,15 @@ type IconName =
   | 'arrow-down'
   | 'credit-card'
   | 'refresh'
+  | 'star'
+  | 'edit'
+  | 'move'
+  | 'eye'
+  | 'list'
+  | 'filter'
+  | 'video'
+  | 'audio'
+  | 'archive'
   | 'laptop'
   | 'shield'
   | 'hard-drive'
@@ -64,6 +73,38 @@ defineProps<{ name: IconName }>()
     <template v-else-if="name === 'refresh'">
       <path d="M20 7v5h-5" />
       <path d="M20 12a8 8 0 1 1-2.34-5.66L20 9" />
+    </template>
+    <template v-else-if="name === 'star'">
+      <path d="m12 3 2.7 5.5 6.1.9-4.4 4.3 1 6-5.4-2.9-5.4 2.9 1-6-4.4-4.3 6.1-.9L12 3Z" />
+    </template>
+    <template v-else-if="name === 'edit'">
+      <path d="m15 5 4 4M4 20l4.3-.9L19 8.4 15.6 5 4.9 15.7 4 20Z" />
+    </template>
+    <template v-else-if="name === 'move'">
+      <path d="M12 3v18m-6-6 6 6 6-6M6 9l6-6 6 6" />
+    </template>
+    <template v-else-if="name === 'eye'">
+      <path d="M2.5 12s3.4-6 9.5-6 9.5 6 9.5 6-3.4 6-9.5 6-9.5-6-9.5-6Z" />
+      <circle cx="12" cy="12" r="2.5" />
+    </template>
+    <template v-else-if="name === 'list'">
+      <path d="M9 6h12M9 12h12M9 18h12" />
+      <path d="M4 6h.01M4 12h.01M4 18h.01" />
+    </template>
+    <template v-else-if="name === 'filter'">
+      <path d="M4 5h16M7 12h10m-7 7h4" />
+    </template>
+    <template v-else-if="name === 'video'">
+      <rect x="3" y="5" width="13" height="14" rx="2" />
+      <path d="m16 10 5-3v10l-5-3" />
+    </template>
+    <template v-else-if="name === 'audio'">
+      <path d="M9 18V5l12-2v13" />
+      <circle cx="6" cy="18" r="3" />
+      <circle cx="18" cy="16" r="3" />
+    </template>
+    <template v-else-if="name === 'archive'">
+      <path d="M4 4h16v5H4zM5 9v11h14V9m-7 3v4m-2-2 2 2 2-2" />
     </template>
     <template v-else-if="name === 'laptop'">
       <rect x="4" y="4" width="16" height="12" rx="1.5" />

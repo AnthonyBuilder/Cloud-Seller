@@ -1,7 +1,9 @@
 import { DeleteObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3'
+import { assertTrialNotExpired } from '../../utils/subscriptions'
 
 export default defineEventHandler(async (event) => {
   const user = await requireUser(event)
+  await assertTrialNotExpired(user.sub)
   const body = await readBody<{ path?: string }>(event)
   const path = safeFolder(body.path)
   const prefix = `${userPrefix(user.sub)}${path === '/' ? '' : path.slice(1)}`

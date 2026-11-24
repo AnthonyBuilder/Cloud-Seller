@@ -1,7 +1,9 @@
 import { DeleteObjectCommand } from '@aws-sdk/client-s3'
+import { assertTrialNotExpired } from '../../utils/subscriptions'
 
 export default defineEventHandler(async (event) => {
   const user = await requireUser(event)
+  await assertTrialNotExpired(user.sub)
   const body = await readBody<{ key?: string }>(event)
   const key = String(body.key || '')
   const prefix = userPrefix(user.sub)

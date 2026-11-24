@@ -16,7 +16,7 @@ type Plan = {
 
 type Subscription = {
   planId: string
-  status: 'active' | 'incomplete' | 'past_due' | 'canceled'
+  status: 'active' | 'trial' | 'expired' | 'incomplete' | 'past_due' | 'canceled'
 }
 
 const plans = ref<Plan[]>([])

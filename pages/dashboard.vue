@@ -1,18 +1,23 @@
 <script setup lang="ts">
 import { getAuthError } from '~/utils/auth-errors'
+import { FILE_CATEGORIES, FILE_CATEGORY_LABELS, getFileCategory, type FileCategory } from '~/utils/file-types'
 import { clearStoredSession, isUnauthorizedError, isJwtExpired } from '~/utils/session'
 
 useHead({ title: 'Meus arquivos - Cloud Seller' })
 
+type DashboardCollection = 'all' | 'recent' | 'favorites'
+type SortOption = 'modified-desc' | 'modified-asc' | 'name-asc' | 'name-desc' | 'size-asc' | 'size-desc'
 type UserSession = { name: string; email: string }
 type StorageSummary = {
   subscription: {
     name: string
     storage: string
     quotaBytes: number
-    status: 'active' | 'incomplete' | 'past_due' | 'canceled'
+    status: 'active' | 'trial' | 'expired' | 'incomplete' | 'past_due' | 'canceled'
+    trialEndsAt?: number
   } | null
   usedBytes: number
+  usageByCategory: Record<FileCategory, { bytes: number; count: number }>
 }
 type CloudFile = {
   id: string
@@ -28,8 +33,16 @@ type CloudFolder = {
   name: string
   parent: string
 }
+type ManagementTarget = {
+  kind: 'file' | 'folder'
+  source: string
+  name: string
+  parentFolder: string
+}
 
 const DB_NAME = 'cloud-seller-files'
+const RECENT_WINDOW_MS = 30 * 24 * 60 * 60 * 1000
+const route = useRoute()
 const session = ref<UserSession | null>(null)
 const files = ref<CloudFile[]>([])
 const folders = ref<CloudFolder[]>([])
@@ -48,10 +61,111 @@ const previewUrl = ref('')
 const previewContentType = ref('')
 const previewLoading = ref(false)
 const previewError = ref('')
+const currentCollection = ref<DashboardCollection>(
+  route.query.view === 'recent' || route.query.view === 'favorites' ? route.query.view : 'all',
+)
+const viewMode = ref<'list' | 'grid'>('list')
+const sortOption = ref<SortOption>('modified-desc')
+const typeFilter = ref<FileCategory | 'all'>('all')
+const showOrganizationControls = ref(false)
+const favoriteFileIds = ref<string[]>([])
+const selectedFileIds = ref<string[]>([])
+const bulkActionRunning = ref(false)
+const bulkProgress = ref('')
+const managementTarget = ref<ManagementTarget | null>(null)
+const managementMode = ref<'rename' | 'move'>('rename')
+const managementName = ref('')
+const destinationFolder = ref('/')
+const managingItem = ref(false)
+const readOnlyStorage = computed(() => storageSummary.value?.subscription?.status === 'expired')
 let db: IDBDatabase | null = null
+let trialExpiryTimer: number | undefined
 
 function authHeaders() {
   return { Authorization: `Bearer ${localStorage.getItem('cloud-seller-id-token')}` }
+}
+
+function favoriteStorageKey() {
+  const identity = session.value?.email.trim().toLowerCase() || 'unknown'
+  return `cloud-seller-favorites:${identity}`
+}
+
+function loadFavorites() {
+  const stored = localStorage.getItem(favoriteStorageKey())
+  if (!stored) {
+    favoriteFileIds.value = []
+    return
+  }
+
+  try {
+    const parsed: unknown = JSON.parse(stored)
+    if (!Array.isArray(parsed) || !parsed.every(id => typeof id === 'string')) {
+      throw new Error('Invalid favorites data')
+    }
+    favoriteFileIds.value = parsed
+  } catch (caught) {
+    console.error('Could not read saved favorites', caught)
+    favoriteFileIds.value = []
+    uploadMessage.value = 'Não foi possível carregar os favoritos salvos neste navegador.'
+  }
+}
+
+function isFavorite(file: CloudFile) {
+  return favoriteFileIds.value.includes(file.id)
+}
+
+function saveFavorites(next: string[]) {
+  try {
+    localStorage.setItem(favoriteStorageKey(), JSON.stringify(next))
+    favoriteFileIds.value = next
+  } catch (caught) {
+    uploadMessage.value = getAuthError(caught, 'Não foi possível salvar os favoritos neste navegador.').message
+  }
+}
+
+function toggleFavorite(file: CloudFile) {
+  const next = isFavorite(file)
+    ? favoriteFileIds.value.filter(id => id !== file.id)
+    : [...favoriteFileIds.value, file.id]
+  saveFavorites(next)
+}
+
+function remapFavoritePrefix(oldPrefix: string, newPrefix: string) {
+  const next = favoriteFileIds.value.map(id => id.startsWith(oldPrefix) ? `${newPrefix}${id.slice(oldPrefix.length)}` : id)
+  saveFavorites(next)
+}
+
+function toggleFileSelection(file: CloudFile) {
+  selectedFileIds.value = selectedFileIds.value.includes(file.id)
+    ? selectedFileIds.value.filter(id => id !== file.id)
+    : [...selectedFileIds.value, file.id]
+}
+
+function toggleAllVisibleFiles() {
+  const visibleIds = new Set(currentFiles.value.map(file => file.id))
+  selectedFileIds.value = allVisibleFilesSelected.value
+    ? selectedFileIds.value.filter(id => !visibleIds.has(id))
+    : [...new Set([...selectedFileIds.value, ...visibleIds])]
+}
+
+function clearSelection() {
+  selectedFileIds.value = []
+}
+
+async function setDashboardCollection(collection: DashboardCollection) {
+  currentCollection.value = collection
+  currentFolder.value = '/'
+  search.value = ''
+  clearSelection()
+  await navigateTo({
+    path: '/dashboard',
+    query: collection === 'all' ? {} : { view: collection },
+  })
+  try {
+    await refreshStorage()
+  } catch (caught) {
+    uploadMessage.value = getAuthError(caught, 'Não foi possível carregar esta visualização.').message
+  }
 }
 
 function openDatabase(): Promise<IDBDatabase> {
@@ -100,9 +214,16 @@ async function deleteRecord(storeName: 'folders' | 'files', key: string) {
 
 async function refreshStorage() {
   if (awsMode.value) {
-    const result = await $fetch<{ folder: string; folders: { name: string; path: string }[]; files: { key: string; name: string; size: number; modified: string }[] }>('/api/files/list', {
+    const result = await $fetch<{
+      folder: string
+      folders: { name: string; path: string }[]
+      files: { key: string; name: string; size: number; modified: string; folder?: string }[]
+    }>('/api/files/list', {
       headers: authHeaders(),
-      query: { folder: currentFolder.value },
+      query: {
+        folder: currentFolder.value,
+        all: currentCollection.value === 'all' ? undefined : 'true',
+      },
     })
     folders.value = result.folders.map(folder => ({
       path: folder.path,
@@ -112,7 +233,7 @@ async function refreshStorage() {
     files.value = result.files.map(file => ({
       id: file.key,
       name: file.name,
-      folder: currentFolder.value,
+      folder: file.folder || currentFolder.value,
       size: file.size,
       modified: file.modified ? new Date(file.modified).getTime() : Date.now(),
       mime: guessMime(file.name),
@@ -125,9 +246,22 @@ async function refreshStorage() {
 }
 
 async function refreshSubscription() {
-  storageSummary.value = await $fetch<StorageSummary>('/api/subscription', {
+  const summary = await $fetch<StorageSummary>('/api/subscription', {
     headers: authHeaders(),
   })
+  storageSummary.value = summary
+  if (trialExpiryTimer !== undefined) window.clearTimeout(trialExpiryTimer)
+
+  const trialEndsAt = summary.subscription?.status === 'trial'
+    ? summary.subscription.trialEndsAt
+    : undefined
+  if (trialEndsAt) {
+    trialExpiryTimer = window.setTimeout(() => {
+      if (storageSummary.value?.subscription?.status === 'trial') {
+        storageSummary.value.subscription.status = 'expired'
+      }
+    }, Math.max(trialEndsAt - Date.now(), 0) + 50)
+  }
 }
 
 function guessMime(name: string) {
@@ -150,6 +284,7 @@ function normalizePath(path: string) {
 }
 
 const currentFolders = computed(() => {
+  if (currentCollection.value !== 'all') return []
   const term = search.value.trim().toLowerCase()
   return folders.value
     .filter(folder => folder.parent === currentFolder.value)
@@ -159,13 +294,55 @@ const currentFolders = computed(() => {
 
 const currentFiles = computed(() => {
   const term = search.value.trim().toLowerCase()
+  const recentAfter = Date.now() - RECENT_WINDOW_MS
   return files.value
-    .filter(file => file.folder === currentFolder.value)
+    .filter(file => currentCollection.value !== 'all' || file.folder === currentFolder.value)
     .filter(file => !term || file.name.toLowerCase().includes(term))
-    .sort((a, b) => b.modified - a.modified)
+    .filter(file => typeFilter.value === 'all' || getFileCategory(file.name) === typeFilter.value)
+    .filter(file => currentCollection.value !== 'recent' || file.modified >= recentAfter)
+    .filter(file => currentCollection.value !== 'favorites' || favoriteFileIds.value.includes(file.id))
+    .sort((a, b) => {
+      const [sortKey, sortDirection] = sortOption.value.split('-')
+      const comparison = sortKey === 'name'
+        ? a.name.localeCompare(b.name)
+        : sortKey === 'size'
+          ? a.size - b.size
+          : a.modified - b.modified
+      return sortDirection === 'asc' ? comparison : -comparison
+    })
 })
 
 const itemCount = computed(() => currentFolders.value.length + currentFiles.value.length)
+const selectedFiles = computed(() => currentFiles.value.filter(file => selectedFileIds.value.includes(file.id)))
+const allVisibleFilesSelected = computed(() =>
+  currentFiles.value.length > 0 && currentFiles.value.every(file => selectedFileIds.value.includes(file.id)),
+)
+const categoryUsage = computed(() => FILE_CATEGORIES
+  .map(category => ({
+    category,
+    label: FILE_CATEGORY_LABELS[category],
+    ...(storageSummary.value?.usageByCategory[category] || { bytes: 0, count: 0 }),
+  }))
+  .filter(category => category.count > 0)
+  .sort((a, b) => b.bytes - a.bytes))
+const totalFileCount = computed(() => categoryUsage.value.reduce((sum, item) => sum + item.count, 0))
+const destinationFolders = computed(() => {
+  const options = new Map<string, string>([['/', 'Meu armazenamento']])
+  if (currentFolder.value !== '/') {
+    options.set(currentFolder.value, currentFolder.value.split('/').filter(Boolean).join(' / '))
+  }
+  for (const folder of folders.value) {
+    options.set(folder.path, folder.path.split('/').filter(Boolean).join(' / '))
+  }
+  const target = managementTarget.value
+  if (target?.parentFolder) {
+    options.set(target.parentFolder, target.parentFolder === '/'
+      ? 'Meu armazenamento'
+      : target.parentFolder.split('/').filter(Boolean).join(' / '))
+  }
+  return Array.from(options, ([path, name]) => ({ path, name }))
+    .filter(folder => target?.kind !== 'folder' || (folder.path !== target.source && !folder.path.startsWith(target.source)))
+})
 const storagePercent = computed(() => {
   const summary = storageSummary.value
   const quota = summary?.subscription?.quotaBytes || 0
@@ -174,8 +351,12 @@ const storagePercent = computed(() => {
 const uploadBlocked = computed(() => {
   const summary = storageSummary.value
   return !summary?.subscription
-    || summary.subscription.status !== 'active'
+    || (summary.subscription.status !== 'active' && summary.subscription.status !== 'trial')
     || summary.usedBytes >= summary.subscription.quotaBytes
+})
+const subscriptionNeedsPlan = computed(() => {
+  const status = storageSummary.value?.subscription?.status
+  return !status || (status !== 'active' && status !== 'trial')
 })
 
 const breadcrumbs = computed(() => {
@@ -190,6 +371,20 @@ const breadcrumbs = computed(() => {
   return result
 })
 
+watch(() => route.query.view, (view) => {
+  const collection: DashboardCollection = view === 'recent' || view === 'favorites' ? view : 'all'
+  if (collection === currentCollection.value) return
+  currentCollection.value = collection
+  currentFolder.value = '/'
+  search.value = ''
+  clearSelection()
+  void refreshStorage().catch((caught) => {
+    uploadMessage.value = getAuthError(caught, 'Não foi possível carregar esta visualização.').message
+  })
+})
+
+watch([search, typeFilter, sortOption], clearSelection)
+
 onMounted(async () => {
   const stored = localStorage.getItem('cloud-seller-session')
   const idToken = localStorage.getItem('cloud-seller-id-token')
@@ -199,6 +394,7 @@ onMounted(async () => {
     return
   }
   session.value = JSON.parse(stored) as UserSession
+  loadFavorites()
 
   try {
     await refreshSubscription()
@@ -222,17 +418,33 @@ function logout() {
   navigateTo('/login')
 }
 
-function openFolder(folder: CloudFolder) {
+async function openFolder(folder: CloudFolder) {
   currentFolder.value = normalizePath(folder.path)
   search.value = ''
+  clearSelection()
+  try {
+    await refreshStorage()
+  } catch (caught) {
+    uploadMessage.value = getAuthError(caught, 'Não foi possível abrir esta pasta.').message
+  }
 }
 
-function goToBreadcrumb(path: string) {
+async function goToBreadcrumb(path: string) {
   currentFolder.value = normalizePath(path)
   search.value = ''
+  clearSelection()
+  try {
+    await refreshStorage()
+  } catch (caught) {
+    uploadMessage.value = getAuthError(caught, 'Não foi possível carregar esta pasta.').message
+  }
 }
 
 async function createFolder() {
+  if (readOnlyStorage.value) {
+    uploadMessage.value = 'O período gratuito terminou; o armazenamento está somente para leitura.'
+    return
+  }
   showFolderModal.value = true
   newFolderName.value = ''
   await nextTick()
@@ -240,6 +452,10 @@ async function createFolder() {
 }
 
 async function confirmCreateFolder() {
+  if (readOnlyStorage.value) {
+    uploadMessage.value = 'O período gratuito terminou; o armazenamento está somente para leitura.'
+    return
+  }
   const name = newFolderName.value.trim()
   if (!name) {
     uploadMessage.value = 'Digite um nome para a pasta.'
@@ -457,6 +673,104 @@ function downloadFile(file: CloudFile) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
+function triggerDownload(file: CloudFile, url: string) {
+  const link = document.createElement('a')
+  link.href = url
+  link.download = file.name
+  link.rel = 'noopener'
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+}
+
+async function downloadSelectedFiles() {
+  const targets = [...selectedFiles.value]
+  if (!targets.length || bulkActionRunning.value) return
+
+  bulkActionRunning.value = true
+  const failures: string[] = []
+  let downloaded = 0
+  try {
+    for (let index = 0; index < targets.length; index++) {
+      const file = targets[index]
+      bulkProgress.value = `Preparando ${index + 1} de ${targets.length}`
+      try {
+        if (awsMode.value) {
+          const result = await $fetch<{ url: string }>('/api/files/download', {
+            headers: authHeaders(),
+            query: { key: file.id },
+          })
+          triggerDownload(file, result.url)
+        } else if (file.blob) {
+          const url = URL.createObjectURL(file.blob)
+          triggerDownload(file, url)
+          window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+        } else {
+          throw new Error('Conteúdo local indisponível')
+        }
+        downloaded++
+        await new Promise(resolve => window.setTimeout(resolve, 350))
+      } catch (caught) {
+        failures.push(`${file.name}: ${getAuthError(caught, 'falha no download').message}`)
+      }
+    }
+    uploadMessage.value = failures.length
+      ? `${downloaded} de ${targets.length} arquivos preparados. Falhas: ${failures.join('; ')}`
+      : `${downloaded} arquivo(s) enviado(s) para download.`
+  } finally {
+    bulkActionRunning.value = false
+    bulkProgress.value = ''
+  }
+}
+
+async function deleteSelectedFiles() {
+  const targets = [...selectedFiles.value]
+  if (!targets.length || bulkActionRunning.value) return
+  if (readOnlyStorage.value) {
+    uploadMessage.value = 'O período gratuito terminou; o armazenamento está somente para leitura.'
+    return
+  }
+  if (!window.confirm(`Excluir permanentemente ${targets.length} arquivo(s) selecionado(s)?`)) return
+
+  bulkActionRunning.value = true
+  const deletedIds = new Set<string>()
+  const failures: string[] = []
+  try {
+    for (const file of targets) {
+      try {
+        if (awsMode.value) {
+          await $fetch('/api/files/delete', {
+            method: 'DELETE',
+            headers: authHeaders(),
+            body: { key: file.id },
+          })
+        } else {
+          await deleteRecord('files', file.id)
+        }
+        deletedIds.add(file.id)
+      } catch (caught) {
+        failures.push(`${file.name}: ${getAuthError(caught, 'falha ao excluir').message}`)
+      }
+    }
+
+    if (deletedIds.size) {
+      selectedFileIds.value = selectedFileIds.value.filter(id => !deletedIds.has(id))
+      try {
+        await refreshStorage()
+        await refreshSubscription()
+      } catch (caught) {
+        failures.push(`Atualização da lista: ${getAuthError(caught, 'falha ao atualizar').message}`)
+      }
+    }
+
+    uploadMessage.value = failures.length
+      ? `${deletedIds.size} arquivo(s) excluído(s). Falhas: ${failures.join('; ')}`
+      : `${deletedIds.size} arquivo(s) excluído(s).`
+  } finally {
+    bulkActionRunning.value = false
+  }
+}
+
 async function previewFile(file: CloudFile) {
   closePreview()
   previewFileItem.value = file
@@ -493,6 +807,10 @@ function closePreview() {
 }
 
 async function deleteFile(file: CloudFile) {
+  if (readOnlyStorage.value) {
+    uploadMessage.value = 'O período gratuito terminou; o armazenamento está somente para leitura.'
+    return
+  }
   if (!window.confirm(`Excluir "${file.name}"?`)) return
   if (awsMode.value) {
     await $fetch('/api/files/delete', {
@@ -510,6 +828,10 @@ async function deleteFile(file: CloudFile) {
 }
 
 async function deleteFolder(folder: CloudFolder) {
+  if (readOnlyStorage.value) {
+    uploadMessage.value = 'O período gratuito terminou; o armazenamento está somente para leitura.'
+    return
+  }
   if (!window.confirm(`Excluir a pasta "${folder.name}" e todo o conteúdo nela?`)) return
   if (awsMode.value) {
     await $fetch('/api/files/folder', {
@@ -535,6 +857,118 @@ async function deleteFolder(folder: CloudFolder) {
   uploadMessage.value = `Pasta "${folder.name}" excluída.`
 }
 
+function startManagement(target: CloudFile, kind: 'file', mode: 'rename' | 'move'): void
+function startManagement(target: CloudFolder, kind: 'folder', mode: 'rename' | 'move'): void
+function startManagement(target: CloudFile | CloudFolder, kind: ManagementTarget['kind'], mode: 'rename' | 'move') {
+  if (readOnlyStorage.value) {
+    uploadMessage.value = 'O período gratuito terminou; o armazenamento está somente para leitura.'
+    return
+  }
+  const isFile = 'id' in target
+  managementTarget.value = {
+    kind,
+    source: isFile ? target.id : target.path,
+    name: target.name,
+    parentFolder: isFile ? target.folder : target.parent,
+  }
+  managementMode.value = mode
+  managementName.value = target.name
+  destinationFolder.value = isFile ? target.folder : target.parent
+}
+
+function closeManagement() {
+  managementTarget.value = null
+  managingItem.value = false
+}
+
+async function saveManagement() {
+  const target = managementTarget.value
+  if (!target || managingItem.value) return
+  if (readOnlyStorage.value) {
+    uploadMessage.value = 'O período gratuito terminou; o armazenamento está somente para leitura.'
+    closeManagement()
+    return
+  }
+
+  const newName = managementName.value.trim().replace(/[\\/]/g, '-')
+  if (!newName || newName === '.' || newName === '..') {
+    uploadMessage.value = 'Informe um nome válido para o item.'
+    return
+  }
+
+  const destination = normalizePath(destinationFolder.value)
+  if (newName === target.name && destination === target.parentFolder) {
+    closeManagement()
+    return
+  }
+  if (target.kind === 'folder' && (destination === target.source || destination.startsWith(target.source))) {
+    uploadMessage.value = 'Uma pasta não pode ser movida para dentro dela mesma.'
+    return
+  }
+
+  managingItem.value = true
+  try {
+    if (awsMode.value) {
+      const result = await $fetch<{ key?: string; sourcePrefix?: string; destinationPrefix?: string }>('/api/files/relocate', {
+        method: 'POST',
+        headers: authHeaders(),
+        body: {
+          kind: target.kind,
+          source: target.source,
+          destinationFolder: destination,
+          newName,
+        },
+      })
+      if (target.kind === 'file' && result.key) {
+        remapFavoritePrefix(target.source, result.key)
+      } else if (result.sourcePrefix && result.destinationPrefix) {
+        remapFavoritePrefix(result.sourcePrefix, result.destinationPrefix)
+      }
+    } else if (target.kind === 'file') {
+      const file = files.value.find(item => item.id === target.source)
+      if (!file) throw new Error('O arquivo não está mais disponível.')
+      const collision = files.value.some(item =>
+        item.id !== file.id && item.folder === destination && item.name === newName,
+      )
+      if (collision) throw new Error('Já existe um arquivo com esse nome no destino.')
+      await saveRecord('files', { ...file, name: newName, folder: destination })
+    } else {
+      const sourcePath = normalizePath(target.source)
+      const destinationPath = normalizePath(`${destination === '/' ? '' : destination}${newName}`)
+      if (folders.value.some(folder => folder.path === destinationPath && folder.path !== sourcePath)) {
+        throw new Error('Já existe uma pasta com esse nome no destino.')
+      }
+      const affectedFolders = folders.value.filter(folder =>
+        folder.path === sourcePath || folder.path.startsWith(sourcePath),
+      )
+      const affectedFiles = files.value.filter(file =>
+        file.folder === sourcePath || file.folder.startsWith(sourcePath),
+      )
+      for (const folder of affectedFolders) {
+        const path = `${destinationPath}${folder.path.slice(sourcePath.length)}`
+        const parent = path.slice(0, path.lastIndexOf('/', path.length - 2) + 1) || '/'
+        await deleteRecord('folders', folder.path)
+        await saveRecord('folders', { ...folder, path, parent })
+      }
+      for (const file of affectedFiles) {
+        await saveRecord('files', {
+          ...file,
+          folder: `${destinationPath}${file.folder.slice(sourcePath.length)}`,
+        })
+      }
+    }
+
+    await refreshStorage()
+    clearSelection()
+    uploadMessage.value = `${target.kind === 'file' ? 'Arquivo' : 'Pasta'} "${target.name}" atualizado(a).`
+    closeManagement()
+  } catch (caught) {
+    uploadMessage.value = getAuthError(caught, 'Não foi possível mover ou renomear o item.').message
+  } finally {
+    managingItem.value = false
+  }
+}
+
 function formatSize(bytes: number) {
   if (bytes === 0) return '0 B'
   const units = ['B', 'KB', 'MB', 'GB', 'TB']
@@ -550,16 +984,37 @@ function formatDate(timestamp: number) {
   }).format(timestamp)
 }
 
-function fileCategory(file: CloudFile): 'image' | 'pdf' | 'spreadsheet' | 'document' {
-  if (file.mime.startsWith('image/')) return 'image'
-  if (file.mime.includes('pdf')) return 'pdf'
-  if (file.mime.includes('sheet') || file.mime.includes('excel')) return 'spreadsheet'
+function formatTrialEnd(timestamp?: number) {
+  if (!timestamp) return ''
+  return new Intl.DateTimeFormat('pt-BR', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(timestamp)
+}
+
+onBeforeUnmount(() => {
+  if (trialExpiryTimer !== undefined) window.clearTimeout(trialExpiryTimer)
+})
+
+function fileCategory(file: CloudFile): FileCategory {
+  return getFileCategory(file.name)
+}
+
+function fileIconName(file: CloudFile): 'photo' | 'pdf' | 'spreadsheet' | 'document' | 'video' | 'audio' | 'archive' {
+  const category = fileCategory(file)
+  if (category === 'image') return 'photo'
+  if (category === 'video' || category === 'audio' || category === 'archive') return category
+  if (category === 'pdf' || category === 'spreadsheet') return category
   return 'document'
 }
 
-function fileIconName(file: CloudFile): 'photo' | 'pdf' | 'spreadsheet' | 'document' {
-  const category = fileCategory(file)
-  return category === 'image' ? 'photo' : category
+function categoryIconName(category: FileCategory): 'photo' | 'pdf' | 'spreadsheet' | 'document' | 'video' | 'audio' | 'archive' {
+  if (category === 'image') return 'photo'
+  if (category === 'video' || category === 'audio' || category === 'archive') return category
+  if (category === 'pdf' || category === 'spreadsheet') return category
+  return 'document'
 }
 </script>
 
@@ -572,8 +1027,9 @@ function fileIconName(file: CloudFile): 'photo' | 'pdf' | 'spreadsheet' | 'docum
       </a>
 
       <nav class="dashboard-nav" aria-label="Área do usuário">
-        <a class="active" href="/dashboard"><IconSymbol name="grid" /> Meus arquivos</a>
-        <a href="/dashboard?view=recent"><IconSymbol name="clock" /> Recentes</a>
+        <NuxtLink to="/dashboard" :class="{ active: currentCollection === 'all' }"><IconSymbol name="grid" /> Meus arquivos</NuxtLink>
+        <NuxtLink to="/dashboard?view=recent" :class="{ active: currentCollection === 'recent' }"><IconSymbol name="clock" /> Recentes</NuxtLink>
+        <NuxtLink to="/dashboard?view=favorites" :class="{ active: currentCollection === 'favorites' }"><IconSymbol name="star" /> Favoritos</NuxtLink>
         <a href="/dashboard?view=shared"><IconSymbol name="share" /> Compartilhados</a>
       </nav>
 
@@ -582,6 +1038,10 @@ function fileIconName(file: CloudFile): 'photo' | 'pdf' | 'spreadsheet' | 'docum
         <strong>{{ formatSize(storageSummary?.usedBytes || 0) }} <small>de {{ storageSummary?.subscription?.storage || '—' }}</small></strong>
         <div class="storage-bar"><span :style="{ width: `${storagePercent}%` }" /></div>
         <small v-if="storageSummary?.subscription?.status === 'active'">Plano ativo</small>
+        <small v-else-if="storageSummary?.subscription?.status === 'trial'">
+          Teste grátis até {{ formatTrialEnd(storageSummary.subscription.trialEndsAt) }}
+        </small>
+        <small v-else-if="storageSummary?.subscription?.status === 'expired'">Acesso somente para leitura</small>
         <small v-else-if="storageSummary?.subscription">Pagamento pendente ou inacessível</small>
         <NuxtLink class="storage-billing-link" to="/subscription">Plano e pagamento</NuxtLink>
       </div>
@@ -593,20 +1053,29 @@ function fileIconName(file: CloudFile): 'photo' | 'pdf' | 'spreadsheet' | 'docum
       <header class="dashboard-header">
         <div>
           <p>Olá, {{ session?.name || 'usuário' }}</p>
-          <h1>Meus arquivos</h1>
+          <h1>{{ currentCollection === 'recent' ? 'Recentes' : currentCollection === 'favorites' ? 'Favoritos' : 'Meus arquivos' }}</h1>
         </div>
         <div class="user-avatar">{{ session?.name?.charAt(0).toUpperCase() || 'U' }}</div>
       </header>
 
       <div
-        v-if="storageSummary?.subscription?.status !== 'active'"
+        v-if="storageSummary?.subscription?.status === 'trial'"
+        class="subscription-alert subscription-trial-alert"
+      >
+        Teste gratuito até {{ formatTrialEnd(storageSummary.subscription.trialEndsAt) }}. Sem cobrança automática; após o período, os arquivos ficam disponíveis para leitura e download.
+        <NuxtLink to="/subscription">Ver planos pagos</NuxtLink>
+      </div>
+      <div
+        v-else-if="subscriptionNeedsPlan"
         class="subscription-alert"
       >
-        Ative o pagamento para enviar novos arquivos.
+        {{ storageSummary?.subscription?.status === 'expired'
+          ? 'Seu período gratuito terminou. Você ainda pode visualizar e baixar os arquivos; escolha um plano para enviar novos.'
+          : 'Ative um plano para enviar novos arquivos.' }}
         <NuxtLink to="/subscription">Escolher plano</NuxtLink>
       </div>
       <div
-        v-else-if="storageSummary.usedBytes >= storageSummary.subscription.quotaBytes"
+        v-else-if="storageSummary && storageSummary.subscription && storageSummary.usedBytes >= storageSummary.subscription.quotaBytes"
         class="subscription-alert"
       >
         Você atingiu o limite do plano. Exclua arquivos para liberar espaço antes de enviar outros.
@@ -632,6 +1101,112 @@ function fileIconName(file: CloudFile): 'photo' | 'pdf' | 'spreadsheet' | 'docum
         </div>
       </div>
 
+      <section v-if="categoryUsage.length" class="category-usage" aria-label="Uso por tipo de arquivo">
+        <article v-for="item in categoryUsage" :key="item.category" class="category-usage-card">
+          <span class="category-usage-icon" :class="`type-${item.category}`">
+            <IconSymbol :name="categoryIconName(item.category)" />
+          </span>
+          <span class="category-usage-copy">
+            <strong>{{ item.label }}</strong>
+            <small>{{ item.count }} arquivo(s)</small>
+          </span>
+          <strong class="category-usage-size">{{ formatSize(item.bytes) }}</strong>
+        </article>
+        <span class="category-usage-total">{{ totalFileCount }} arquivos armazenados</span>
+      </section>
+
+      <div class="file-options-toolbar">
+        <button
+          class="organization-toggle"
+          type="button"
+          aria-controls="organization-controls"
+          :aria-expanded="showOrganizationControls"
+          @click="showOrganizationControls = !showOrganizationControls"
+        >
+          <IconSymbol name="filter" />
+          <span>Organizar</span>
+          <span v-if="typeFilter !== 'all'" class="organization-active-filter">
+            {{ FILE_CATEGORY_LABELS[typeFilter] }}
+          </span>
+        </button>
+        <div
+          id="organization-controls"
+          class="organization-controls"
+          :class="{ 'is-open': showOrganizationControls }"
+        >
+          <label class="file-select-control">
+            <IconSymbol name="filter" />
+            <span>Tipo</span>
+            <select v-model="typeFilter" aria-label="Filtrar por tipo de arquivo" @change="showOrganizationControls = false">
+              <option value="all">Todos</option>
+              <option v-for="category in FILE_CATEGORIES" :key="category" :value="category">
+                {{ FILE_CATEGORY_LABELS[category] }}
+              </option>
+            </select>
+          </label>
+          <label class="file-select-control sort-control">
+            <span>Ordenar</span>
+            <select v-model="sortOption" aria-label="Ordenar arquivos" @change="showOrganizationControls = false">
+              <option value="modified-desc">Mais recentes</option>
+              <option value="modified-asc">Mais antigos</option>
+              <option value="name-asc">Nome A–Z</option>
+              <option value="name-desc">Nome Z–A</option>
+              <option value="size-desc">Maior tamanho</option>
+              <option value="size-asc">Menor tamanho</option>
+            </select>
+          </label>
+        </div>
+        <button
+          v-if="currentFiles.length"
+          class="bulk-select-toggle"
+          type="button"
+          :aria-pressed="allVisibleFilesSelected"
+          @click="toggleAllVisibleFiles"
+        >
+          <IconSymbol :name="allVisibleFilesSelected ? 'close' : 'check'" />
+          {{ allVisibleFilesSelected ? 'Desmarcar' : 'Selecionar tudo' }}
+        </button>
+        <div class="view-mode-control" role="group" aria-label="Modo de visualização">
+          <button
+            type="button"
+            :class="{ active: viewMode === 'list' }"
+            :aria-pressed="viewMode === 'list'"
+            aria-label="Visualização em lista"
+            @click="viewMode = 'list'"
+          >
+            <IconSymbol name="list" />
+          </button>
+          <button
+            type="button"
+            :class="{ active: viewMode === 'grid' }"
+            :aria-pressed="viewMode === 'grid'"
+            aria-label="Visualização em grade"
+            @click="viewMode = 'grid'"
+          >
+            <IconSymbol name="grid" />
+          </button>
+        </div>
+      </div>
+
+      <div v-if="selectedFiles.length" class="bulk-toolbar">
+        <span v-if="selectedFiles.length" class="selected-count">{{ selectedFiles.length }} selecionado(s)</span>
+        <div v-if="selectedFiles.length" class="bulk-actions">
+          <button type="button" class="bulk-button" :disabled="bulkActionRunning" @click="downloadSelectedFiles">
+            <IconSymbol name="download" /> Baixar selecionados
+          </button>
+          <button
+            type="button"
+            class="bulk-button bulk-delete-button"
+            :disabled="bulkActionRunning || readOnlyStorage"
+            @click="deleteSelectedFiles"
+          >
+            <IconSymbol name="trash" /> Excluir
+          </button>
+          <button type="button" class="bulk-clear-button" @click="clearSelection">Limpar seleção</button>
+        </div>
+        <span v-if="bulkProgress" class="bulk-progress" aria-live="polite">{{ bulkProgress }}</span>
+      </div>
+
       <nav class="breadcrumbs" aria-label="Caminho da pasta">
         <button
           v-for="(crumb, index) in breadcrumbs"
@@ -645,7 +1220,11 @@ function fileIconName(file: CloudFile): 'photo' | 'pdf' | 'spreadsheet' | 'docum
       </nav>
 
       <p v-if="uploadMessage" class="upload-message">{{ uploadMessage }}</p>
-      <p class="drop-hint">Você também pode arrastar arquivos e soltá-los na lista abaixo.</p>
+      <p class="drop-hint">
+        <template v-if="currentCollection === 'recent'">Arquivos modificados nos últimos 30 dias. </template>
+        <template v-else-if="currentCollection === 'favorites'">Favoritos salvos neste navegador. </template>
+        Você também pode arrastar arquivos e soltá-los na lista abaixo.
+      </p>
 
       <div
         class="files-drop-zone"
@@ -658,53 +1237,162 @@ function fileIconName(file: CloudFile): 'photo' | 'pdf' | 'spreadsheet' | 'docum
         <div v-if="isDraggingFiles" class="drop-overlay" aria-live="polite">
           Solte os arquivos para enviá-los a esta pasta
         </div>
-        <div class="files-panel">
-          <div class="files-heading">
+        <div class="files-panel" :class="{ 'files-panel-grid': viewMode === 'grid' }">
+          <div v-if="viewMode === 'list'" class="files-heading">
             <span>Nome</span>
             <span>Tamanho</span>
             <span>Modificado</span>
             <span />
           </div>
 
-          <article v-for="folder in currentFolders" :key="folder.path" class="file-row folder-row">
+          <article
+            v-for="folder in currentFolders"
+            :key="folder.path"
+            class="file-row folder-row"
+            :class="{ 'grid-item': viewMode === 'grid' }"
+          >
             <button class="folder-name" type="button" @click="openFolder(folder)">
               <span class="folder-icon"><IconSymbol name="folder" /></span>
               <strong>{{ folder.name }}</strong>
             </button>
             <span class="file-size">Pasta</span>
             <span class="file-modified">—</span>
-            <button class="delete-button" type="button" :aria-label="`Excluir pasta ${folder.name}`" @click="deleteFolder(folder)">
-              <IconSymbol name="trash" />
-            </button>
+            <div class="file-actions">
+              <button
+                class="icon-action-button"
+                type="button"
+                :disabled="readOnlyStorage"
+                :aria-label="`Mover pasta ${folder.name}`"
+                title="Mover pasta"
+                @click="startManagement(folder, 'folder', 'move')"
+              >
+                <IconSymbol name="move" />
+              </button>
+              <button
+                class="icon-action-button"
+                type="button"
+                :disabled="readOnlyStorage"
+                :aria-label="`Renomear pasta ${folder.name}`"
+                title="Renomear pasta"
+                @click="startManagement(folder, 'folder', 'rename')"
+              >
+                <IconSymbol name="edit" />
+              </button>
+              <button
+                class="icon-action-button delete-button"
+                type="button"
+                :disabled="readOnlyStorage"
+                :aria-label="`Excluir pasta ${folder.name}`"
+                title="Excluir pasta"
+                @click="deleteFolder(folder)"
+              >
+                <IconSymbol name="trash" />
+              </button>
+            </div>
           </article>
 
-          <article v-for="file in currentFiles" :key="file.id" class="file-row">
+          <article
+            v-for="file in currentFiles"
+            :key="file.id"
+            class="file-row"
+            :class="{ 'grid-item': viewMode === 'grid', 'is-selected': selectedFileIds.includes(file.id) }"
+          >
             <div class="file-name">
+              <input
+                v-model="selectedFileIds"
+                class="file-select-checkbox"
+                type="checkbox"
+                :value="file.id"
+                :aria-label="`Selecionar ${file.name}`"
+              />
               <span class="file-type" :class="`type-${fileCategory(file)}`">
-                <IconSymbol :name="fileIconName(file)" />
+                <button
+                  v-if="fileCategory(file) === 'image' && supportsPreview(file)"
+                  class="file-thumbnail-button"
+                  type="button"
+                  :aria-label="`Visualizar ${file.name}`"
+                  @click="previewFile(file)"
+                >
+                  <FileThumbnail :file-key="file.id" :name="file.name" :blob="file.blob" />
+                </button>
+                <span v-else-if="fileCategory(file) === 'image'" class="file-image-fallback">
+                  <IconSymbol name="photo" />
+                </span>
+                <IconSymbol v-else :name="fileIconName(file)" />
               </span>
-              <strong>{{ file.name }}</strong>
+              <span class="file-name-copy">
+                <strong>{{ file.name }}</strong>
+                <small v-if="isFavorite(file)" class="favorite-label"><IconSymbol name="star" /> Favorito</small>
+              </span>
             </div>
             <span class="file-size">{{ formatSize(file.size) }}</span>
             <span class="file-modified">{{ formatDate(file.modified) }}</span>
             <div class="file-actions">
               <button
                 v-if="supportsPreview(file)"
-                class="preview-button"
+                class="icon-action-button preview-button"
                 type="button"
                 :aria-label="`Visualizar ${file.name}`"
+                title="Visualizar"
                 @click="previewFile(file)"
               >
-                Visualizar
+                <IconSymbol name="eye" />
               </button>
-              <button class="download-button" type="button" :aria-label="`Baixar ${file.name}`" @click="downloadFile(file)"><IconSymbol name="download" /> <span>Baixar</span></button>
-              <button class="delete-button" type="button" :aria-label="`Excluir ${file.name}`" @click="deleteFile(file)"><IconSymbol name="trash" /></button>
+              <button
+                class="icon-action-button favorite-button"
+                :class="{ 'is-favorite': isFavorite(file) }"
+                type="button"
+                :aria-pressed="isFavorite(file)"
+                :aria-label="isFavorite(file) ? `Remover ${file.name} dos favoritos` : `Adicionar ${file.name} aos favoritos`"
+                :title="isFavorite(file) ? 'Remover dos favoritos' : 'Adicionar aos favoritos'"
+                @click="toggleFavorite(file)"
+              >
+                <IconSymbol name="star" />
+              </button>
+              <button
+                class="icon-action-button"
+                type="button"
+                :disabled="readOnlyStorage"
+                :aria-label="`Mover ${file.name}`"
+                title="Mover"
+                @click="startManagement(file, 'file', 'move')"
+              >
+                <IconSymbol name="move" />
+              </button>
+              <button
+                class="icon-action-button"
+                type="button"
+                :disabled="readOnlyStorage"
+                :aria-label="`Renomear ${file.name}`"
+                title="Renomear"
+                @click="startManagement(file, 'file', 'rename')"
+              >
+                <IconSymbol name="edit" />
+              </button>
+              <button class="icon-action-button download-button" type="button" :aria-label="`Baixar ${file.name}`" title="Baixar" @click="downloadFile(file)"><IconSymbol name="download" /></button>
+              <button class="icon-action-button delete-button" type="button" :disabled="readOnlyStorage" :aria-label="`Excluir ${file.name}`" title="Excluir" @click="deleteFile(file)"><IconSymbol name="trash" /></button>
             </div>
           </article>
 
           <div v-if="itemCount === 0" class="empty-files">
-            <strong>{{ search ? 'Nenhum item encontrado' : 'Esta pasta está vazia' }}</strong>
-            <p>{{ search ? 'Tente buscar por outro nome.' : 'Arraste arquivos para cá ou use o botão “Enviar arquivos”.' }}</p>
+            <strong>
+              {{ search
+                ? 'Nenhum item encontrado'
+                : currentCollection === 'favorites'
+                  ? 'Nenhum favorito ainda'
+                  : currentCollection === 'recent'
+                    ? 'Nenhum arquivo recente'
+                    : 'Esta pasta está vazia' }}
+            </strong>
+            <p>
+              {{ search
+                ? 'Tente buscar por outro nome.'
+                : currentCollection === 'favorites'
+                  ? 'Use a estrela ao lado de um arquivo para guardá-lo aqui.'
+                  : currentCollection === 'recent'
+                    ? 'Arquivos modificados nos últimos 30 dias aparecerão aqui.'
+                    : 'Arraste arquivos para cá ou use o botão “Enviar arquivos”.' }}
+            </p>
           </div>
         </div>
       </div>
@@ -718,6 +1406,32 @@ function fileIconName(file: CloudFile): 'photo' | 'pdf' | 'spreadsheet' | 'docum
         <div class="folder-modal-actions">
           <button type="button" class="folder-button" @click="showFolderModal = false">Cancelar</button>
           <button type="submit" class="upload-button">Criar pasta</button>
+        </div>
+      </form>
+    </div>
+
+    <div v-if="managementTarget" class="folder-modal-backdrop" role="presentation" @click.self="closeManagement">
+      <form class="folder-modal management-modal" @submit.prevent="saveManagement">
+        <span class="eyebrow">{{ managementMode === 'move' ? 'MOVER ITEM' : 'RENOMEAR ITEM' }}</span>
+        <h2>{{ managementMode === 'move' ? 'Organize seus arquivos' : 'Escolha um novo nome' }}</h2>
+        <label class="modal-field">
+          <span>Nome</span>
+          <input v-model="managementName" type="text" maxlength="160" required />
+        </label>
+        <label v-if="managementMode === 'move'" class="modal-field">
+          <span>Mover para</span>
+          <select v-model="destinationFolder">
+            <option v-for="folder in destinationFolders" :key="folder.path" :value="folder.path">
+              {{ folder.name }}
+            </option>
+          </select>
+        </label>
+        <div class="folder-modal-actions">
+          <button type="button" class="folder-button" :disabled="managingItem" @click="closeManagement">Cancelar</button>
+          <button type="submit" class="upload-button" :disabled="managingItem">
+            <IconSymbol :name="managementMode === 'move' ? 'move' : 'check'" />
+            {{ managingItem ? 'Salvando...' : managementMode === 'move' ? 'Mover item' : 'Salvar nome' }}
+          </button>
         </div>
       </form>
     </div>

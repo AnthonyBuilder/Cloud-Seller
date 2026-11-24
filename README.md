@@ -43,7 +43,9 @@ diretamente no Checkout, sem armazenar números de cartão no servidor.
 A aplicação inclui páginas de login, escolha de armazenamento e arquivos, autenticação
 Cognito, armazenamento privado S3 e cotas por cliente. Os planos disponíveis são 100 GB,
 500 GB e 1 TB. Os valores mensais em USD são US$ 7,67, US$ 38,33 e US$ 76,67.
-Não há período gratuito. O acesso ao upload exige uma assinatura Stripe ativa.
+Contas sem plano podem ativar 100 GB gratuitos por 24 horas, sem cartão e sem cobrança
+automática. Depois do período, os arquivos continuam disponíveis para visualização e
+download, mas novos envios exigem um plano pago. A expiração é aplicada pelo servidor.
 
 As páginas públicas incluem a home, `/como-funciona`, `/seguranca`, `/sobre` e `/contato`.
 O site e o painel adaptam a navegação e os controles para telas de celular. O contato é
@@ -58,7 +60,10 @@ existentes continuam disponíveis para download. As capacidades usam unidades de
 
 A rota `/dashboard` permite navegar por pastas, enviar, baixar e excluir arquivos reais.
 Os arquivos são armazenados no S3 por APIs do servidor; o navegador não recebe
-credenciais AWS.
+credenciais AWS. O painel também oferece visualização em lista ou grade, filtros por tipo,
+ordenação, prévias de imagens, favoritos salvos no navegador, arquivos modificados nos
+últimos 30 dias, seleção para download ou exclusão em lote e ações para mover e renomear
+arquivos e pastas.
 
 Na rota `/register`, o cliente cria a conta pelo Cloud Seller, confirma o e-mail com
 o código enviado pelo Cognito e, em seguida, entra pela rota `/login`, que autentica

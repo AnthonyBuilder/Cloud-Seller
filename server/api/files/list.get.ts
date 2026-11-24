@@ -3,8 +3,12 @@ import { ListObjectsV2Command } from '@aws-sdk/client-s3'
 export default defineEventHandler(async (event) => {
   const user = await requireUser(event)
   const query = getQuery(event)
+  const allFiles = query.all === 'true'
   const folder = safeFolder(query.folder)
-  const prefix = `${userPrefix(user.sub)}${folder === '/' ? '' : folder.slice(1)}`
+  const userPath = userPrefix(user.sub)
+  const prefix = allFiles
+    ? userPath
+    : `${userPath}${folder === '/' ? '' : folder.slice(1)}`
 
   const client = createS3Client()
   const objectPrefixes = []
@@ -14,13 +18,32 @@ export default defineEventHandler(async (event) => {
     const response = await client.send(new ListObjectsV2Command({
       Bucket: requireS3Bucket(),
       Prefix: prefix,
-      Delimiter: '/',
+      ...(!allFiles ? { Delimiter: '/' } : {}),
       ContinuationToken: continuationToken,
     }))
     objectPrefixes.push(...(response.CommonPrefixes || []))
     objects.push(...(response.Contents || []))
     continuationToken = response.NextContinuationToken
   } while (continuationToken)
+
+  if (allFiles) {
+    const files = objects
+      .filter(item => item.Key && !item.Key.endsWith('/'))
+      .map(item => {
+        const key = item.Key!
+        const relative = key.slice(userPath.length)
+        const separator = relative.lastIndexOf('/')
+        return {
+          key,
+          name: relative.slice(separator + 1),
+          folder: separator < 0 ? '/' : `/${relative.slice(0, separator + 1)}`,
+          size: item.Size || 0,
+          modified: item.LastModified?.toISOString() || '',
+          etag: item.ETag || '',
+        }
+      })
+    return { folder: '/', folders: [], files }
+  }
 
   const folders = objectPrefixes.map(item => {
     const relative = item.Prefix!.slice(prefix.length).replace(/\/$/, '')
