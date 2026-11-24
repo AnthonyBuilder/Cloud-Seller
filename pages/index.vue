@@ -12,20 +12,23 @@ const plans = [
     name: 'Essencial',
     description: 'Para guardar o que importa.',
     storage: '100 GB',
+    priceUsd: 'US$ 7.67',
     featured: false,
   },
   {
     id: 'pro',
     name: 'Pro',
     description: 'Mais espaço para sua rotina.',
-    storage: '1 TB',
+    storage: '500 GB',
+    priceUsd: 'US$ 38.33',
     featured: true,
   },
   {
     id: 'familia',
     name: 'Família',
     description: 'Espaço para todo mundo.',
-    storage: '2 TB',
+    storage: '1 TB',
+    priceUsd: 'US$ 76.67',
     featured: false,
   },
 ]
@@ -135,7 +138,7 @@ const plans = [
             <span class="info-card-icon"><IconSymbol name="hard-drive" /></span>
           </div>
           <h3>Escolha seu espaço</h3>
-          <p>Selecione uma capacidade e experimente por cinco dias, sem cobrança durante o teste.</p>
+          <p>Selecione a capacidade que acompanha sua rotina e comece a guardar seus arquivos.</p>
         </article>
         <article class="info-card step-card">
           <div class="step-card-top">
@@ -168,12 +171,12 @@ const plans = [
             <span v-if="plan.featured" class="popular-label">MAIS ESCOLHIDO</span>
             <h3>{{ plan.name }}</h3>
             <p class="plan-description">{{ plan.description }}</p>
-            <p class="plan-price">5<small>dias grátis</small></p>
+            <p class="plan-price">{{ plan.priceUsd }}<small>/mês</small></p>
             <div class="plan-storage"><IconSymbol name="cloud-upload" /> {{ plan.storage }} de armazenamento</div>
             <NuxtLink class="button" :class="plan.featured ? 'button-primary' : 'button-plan'" to="/register">
               Criar conta <IconSymbol name="arrow-right" />
             </NuxtLink>
-            <p class="plan-note">Sem cobrança durante o teste</p>
+            <p class="plan-note">Plano de armazenamento</p>
           </article>
         </div>
         <aside class="backup-addon" aria-labelledby="backup-addon-title">
@@ -202,7 +205,7 @@ const plans = [
             </a>
           </div>
         </aside>
-        <p class="plans-footnote">Os valores serão definidos antes da ativação das cobranças. Após os cinco dias de teste, novos envios ficam bloqueados até a renovação; seus arquivos continuam disponíveis.</p>
+        <p class="plans-footnote">As capacidades usam unidades decimais. Os valores e condições comerciais serão definidos antes da ativação das cobranças.</p>
       </div>
     </section>
 

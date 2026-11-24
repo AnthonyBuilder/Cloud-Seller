@@ -25,7 +25,7 @@ useHead({
       <aside class="about-highlight">
         <span class="info-card-icon"><IconSymbol name="cloud-check" /></span>
         <h3>Feito para ser direto</h3>
-        <p>Sem promessas escondidas: o teste dura cinco dias e os valores de renovação serão informados antes de qualquer cobrança.</p>
+        <p>Sem condições ocultas: os planos disponíveis têm 100 GB, 500 GB ou 1 TB de armazenamento.</p>
         <NuxtLink class="text-link" to="/como-funciona">Veja como funciona <IconSymbol name="arrow-right" /></NuxtLink>
       </aside>
     </section>

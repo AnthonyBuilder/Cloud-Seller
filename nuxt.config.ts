@@ -18,6 +18,8 @@ export default defineNuxtConfig({
     s3AccessKeyId: process.env.S3_ACCESS_KEY_ID || '',
     s3SecretAccessKey: process.env.S3_SECRET_ACCESS_KEY || '',
     dynamodbTable: process.env.DYNAMODB_TABLE || '',
+    stripeSecretKey: process.env.STRIPE_SECRET_KEY || '',
+    stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
     public: {
       cognitoDomain: process.env.NUXT_PUBLIC_COGNITO_DOMAIN || '',
       cognitoClientId: process.env.COGNITO_CLIENT_ID || '',

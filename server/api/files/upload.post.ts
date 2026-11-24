@@ -23,8 +23,8 @@ export default defineEventHandler(async (event) => {
   if (!plan) {
     throw createError({ statusCode: 500, message: 'The saved storage plan is invalid' })
   }
-  if (getSubscriptionStatus(subscription) === 'expired') {
-    throw createError({ statusCode: 403, message: 'Your trial has expired; renew your plan to upload files' })
+  if (getSubscriptionStatus(subscription) !== 'active') {
+    throw createError({ statusCode: 403, message: 'An active paid subscription is required to upload files' })
   }
 
   const key = `${userPrefix(user.sub)}${folder === '/' ? '' : folder.slice(1)}${name}`

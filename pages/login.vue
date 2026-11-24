@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { getAuthError } from '~/utils/auth-errors'
+import { clearStoredSession, isJwtExpired } from '~/utils/session'
 
 useHead({ title: 'Entrar - Cloud Seller' })
 
@@ -17,6 +18,9 @@ const newPassword = ref('')
 onMounted(async () => {
   const params = new URLSearchParams(window.location.search)
   const code = params.get('code')
+  if (params.get('reauth') === '1') {
+    notice.value = 'Sua sessão expirou. Entre novamente para continuar.'
+  }
   if (params.get('registered') === '1') {
     notice.value = 'Conta confirmada. Agora você já pode entrar.'
   }
@@ -43,8 +47,11 @@ onMounted(async () => {
     return
   }
 
-  if (import.meta.client && localStorage.getItem('cloud-seller-session') && localStorage.getItem('cloud-seller-id-token')) {
-    navigateTo('/subscription')
+  const idToken = localStorage.getItem('cloud-seller-id-token')
+  if (localStorage.getItem('cloud-seller-session') && idToken && !isJwtExpired(idToken)) {
+    await navigateTo('/subscription')
+  } else if (idToken) {
+    clearStoredSession()
   }
 })
 

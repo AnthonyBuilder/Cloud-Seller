@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
-    const subscription = await createTrialSubscription(user.sub, plan)
+    const subscription = await createActiveSubscription(user.sub, plan)
     return { subscription }
   } catch (error) {
     if (isConditionalCheckFailed(error)) {

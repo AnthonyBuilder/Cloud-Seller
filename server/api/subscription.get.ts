@@ -19,9 +19,8 @@ export default defineEventHandler(async (event) => {
       name: plan.name,
       storage: plan.storage,
       quotaBytes: plan.quotaBytes,
+      priceUsd: plan.priceUsd,
       status: getSubscriptionStatus(record),
-      trialStartedAt: record.trialStartedAt,
-      trialEndsAt: record.trialEndsAt,
     },
     usedBytes,
   }

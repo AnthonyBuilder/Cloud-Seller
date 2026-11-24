@@ -14,7 +14,7 @@ const steps = [
   {
     number: '02',
     title: 'Escolha seu espaço',
-    description: 'Selecione 100 GB, 1 TB ou 2 TB. O teste gratuito de cinco dias começa após a escolha.',
+    description: 'Selecione 100 GB, 500 GB ou 1 TB.',
     icon: 'hard-drive' as const,
   },
   {
@@ -57,8 +57,8 @@ const steps = [
     <section class="content-note page-wrap">
       <div>
         <span class="eyebrow">ANTES DE ESCOLHER</span>
-        <h2>Sem cobrança durante o teste.</h2>
-        <p>Os preços de renovação ainda não foram definidos. Após os cinco dias, novos envios ficam pausados até a renovação; os arquivos existentes continuam disponíveis para download.</p>
+        <h2>Escolha o espaço certo.</h2>
+        <p>Compare os planos disponíveis e selecione a capacidade que atende à sua rotina. Seus arquivos permanecem disponíveis pelo painel da conta.</p>
       </div>
       <NuxtLink class="button button-outline" to="/#planos">Conhecer os planos <IconSymbol name="arrow-right" /></NuxtLink>
     </section>

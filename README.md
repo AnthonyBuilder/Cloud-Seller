@@ -25,11 +25,25 @@ Abra o endereço mostrado pelo Nuxt no terminal.
 4. Configure as variáveis de ambiente necessárias no projeto Vercel antes de habilitar
    integrações.
 
+### Cobrança Stripe
+
+Defina `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` e `NUXT_PUBLIC_APP_URL`.
+Em desenvolvimento, coloque as chaves no `.env` da raiz e reinicie o servidor
+(`npm run dev`). `STRIPE_SECRET_KEY` deve começar com `sk_test_` ou `sk_live_`;
+`pk_test_` e `pk_live_` são chaves publicáveis e não iniciam o Checkout.
+Para produção, configure uma chave `sk_live_` e o segredo `whsec_` do endpoint
+criado no modo live apenas nas variáveis privadas do ambiente de produção da Vercel.
+No Stripe Dashboard, registre o endpoint `https://SEU-DOMINIO/api/billing/webhook`
+e ative os eventos `checkout.session.completed`, `customer.subscription.updated`
+e `customer.subscription.deleted`. O projeto cria os preços recorrentes em USD
+diretamente no Checkout, sem armazenar números de cartão no servidor.
+
 ## Estado do MVP
 
 A aplicação inclui páginas de login, escolha de armazenamento e arquivos, autenticação
-Cognito, armazenamento privado S3 e cotas por cliente. A cobrança recorrente ainda não
-está ativa: os preços e as credenciais/webhook do Mercado Pago precisam ser definidos.
+Cognito, armazenamento privado S3 e cotas por cliente. Os planos disponíveis são 100 GB,
+500 GB e 1 TB. Os valores mensais em USD são US$ 7,67, US$ 38,33 e US$ 76,67.
+Não há período gratuito. O acesso ao upload exige uma assinatura Stripe ativa.
 
 As páginas públicas incluem a home, `/como-funciona`, `/seguranca`, `/sobre` e `/contato`.
 O site e o painel adaptam a navegação e os controles para telas de celular. O contato é
@@ -38,9 +52,8 @@ feito pelo endereço `cloudseller@icloud.com`.
 ## Login e arquivos
 
 Após o login Cognito, clientes sem plano são direcionados para `/subscription`, onde
-escolhem 100 GB, 1 TB ou 2 TB e iniciam um teste de cinco dias. A cota é aplicada no
-servidor aos uploads; após o teste, novos envios são bloqueados, mas os arquivos existentes
-continuam disponíveis para download. As capacidades usam unidades decimais
+escolhem 100 GB, 500 GB ou 1 TB. A cota é aplicada no servidor aos uploads e os arquivos
+existentes continuam disponíveis para download. As capacidades usam unidades decimais
 (1 GB = 1.000.000.000 bytes).
 
 A rota `/dashboard` permite navegar por pastas, enviar, baixar e excluir arquivos reais.

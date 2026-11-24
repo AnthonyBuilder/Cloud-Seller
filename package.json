@@ -16,6 +16,7 @@
     "@aws-sdk/s3-request-presigner": "^3.1175.0",
     "jose": "^6.2.18",
     "nuxt": "^3.17.5",
+    "stripe": "^23.2.0",
     "vue": "^3.5.13"
   },
   "devDependencies": {

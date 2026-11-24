@@ -3,20 +3,20 @@ import { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand } from '@
 import { ListObjectsV2Command } from '@aws-sdk/client-s3'
 
 export const STORAGE_PLANS = [
-  { id: 'essencial', name: 'Essencial', storage: '100 GB', quotaBytes: 100_000_000_000 },
-  { id: 'pro', name: 'Pro', storage: '1 TB', quotaBytes: 1_000_000_000_000 },
-  { id: 'familia', name: 'Família', storage: '2 TB', quotaBytes: 2_000_000_000_000 },
+  { id: 'essencial', name: 'Essencial', storage: '100 GB', quotaBytes: 100_000_000_000, priceUsd: 7.67, priceCents: 767 },
+  { id: 'pro', name: 'Pro', storage: '500 GB', quotaBytes: 500_000_000_000, priceUsd: 38.33, priceCents: 3833 },
+  { id: 'familia', name: 'Família', storage: '1 TB', quotaBytes: 1_000_000_000_000, priceUsd: 76.67, priceCents: 7667 },
 ] as const
-
-export const TRIAL_DURATION_DAYS = 5
 
 export type StoragePlan = typeof STORAGE_PLANS[number]
 export type SubscriptionRecord = {
   userId: string
   planId: StoragePlan['id']
-  status: 'trial' | 'active' | 'expired'
-  trialStartedAt: number
-  trialEndsAt: number
+  status: 'active' | 'incomplete' | 'past_due' | 'canceled' | 'trial'
+  stripeCustomerId?: string
+  stripeSubscriptionId?: string
+  currentPeriodEnd?: number
+  cancelAtPeriodEnd?: boolean
   pendingUploadKey?: string
   pendingUploadBytes?: number
   pendingUploadExpiresAt?: number
@@ -58,10 +58,7 @@ export async function getSubscription(userId: string) {
 }
 
 export function getSubscriptionStatus(subscription: SubscriptionRecord) {
-  if (subscription.status === 'trial' && Date.now() >= subscription.trialEndsAt) {
-    return 'expired' as const
-  }
-  return subscription.status
+  return subscription.status === 'trial' ? ('incomplete' as const) : subscription.status
 }
 
 export async function getStorageUsage(userId: string) {
@@ -85,14 +82,11 @@ export async function getStorageUsage(userId: string) {
   return usedBytes
 }
 
-export async function createTrialSubscription(userId: string, plan: StoragePlan) {
-  const now = Date.now()
+export async function createActiveSubscription(userId: string, plan: StoragePlan) {
   const item: SubscriptionRecord = {
     userId,
     planId: plan.id,
-    status: 'trial',
-    trialStartedAt: now,
-    trialEndsAt: now + TRIAL_DURATION_DAYS * 24 * 60 * 60 * 1000,
+    status: 'incomplete',
   }
 
   await getDocumentClient().send(new PutCommand({
@@ -101,6 +95,33 @@ export async function createTrialSubscription(userId: string, plan: StoragePlan)
     ConditionExpression: 'attribute_not_exists(userId)',
   }))
   return item
+}
+
+export async function updateSubscriptionBilling(
+  userId: string,
+  values: {
+    status: SubscriptionRecord['status']
+    planId: StoragePlan['id']
+    stripeCustomerId?: string
+    stripeSubscriptionId?: string
+    currentPeriodEnd?: number
+    cancelAtPeriodEnd?: boolean
+  },
+) {
+  await getDocumentClient().send(new UpdateCommand({
+    TableName: getTableName(),
+    Key: { userId },
+    UpdateExpression: 'SET #status = :status, planId = :planId, stripeCustomerId = :customerId, stripeSubscriptionId = :subscriptionId, currentPeriodEnd = :periodEnd, cancelAtPeriodEnd = :cancelAtPeriodEnd',
+    ExpressionAttributeNames: { '#status': 'status' },
+    ExpressionAttributeValues: {
+      ':status': values.status,
+      ':planId': values.planId,
+      ':customerId': values.stripeCustomerId || '',
+      ':subscriptionId': values.stripeSubscriptionId || '',
+      ':periodEnd': values.currentPeriodEnd || 0,
+      ':cancelAtPeriodEnd': Boolean(values.cancelAtPeriodEnd),
+    },
+  }))
 }
 
 export async function reserveUpload(userId: string, key: string, size: number) {
