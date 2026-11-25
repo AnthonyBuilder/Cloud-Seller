@@ -1,14 +1,28 @@
 <script setup lang="ts">
 const menuOpen = ref(false)
+const isScrolled = ref(false)
 const route = useRoute()
 
 watch(() => route.fullPath, () => {
   menuOpen.value = false
 })
+
+function updateScrollState() {
+  isScrolled.value = window.scrollY > 24
+}
+
+onMounted(() => {
+  updateScrollState()
+  window.addEventListener('scroll', updateScrollState, { passive: true })
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('scroll', updateScrollState)
+})
 </script>
 
 <template>
-  <header class="site-header page-wrap">
+  <header class="site-header page-wrap" :class="{ 'site-header-scrolled': isScrolled }">
     <NuxtLink class="brand" to="/" aria-label="Cloud Seller, início">
       <span class="brand-mark" aria-hidden="true"><IconSymbol name="cloud-upload" /></span>
       <span>cloud seller<span class="brand-dot">.</span></span>
