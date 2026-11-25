@@ -12,12 +12,16 @@ type Plan = {
   storage: string
   quotaBytes: number
   priceUsd: number
+  priceBrl: number
 }
 
 type Subscription = {
   planId: string
   status: 'active' | 'trial' | 'expired' | 'incomplete' | 'past_due' | 'canceled'
+  paymentProvider?: 'stripe' | 'mercadopago'
 }
+
+type PaymentProvider = 'stripe' | 'mercadopago'
 
 const plans = ref<Plan[]>([])
 const subscription = ref<Subscription | null>(null)
@@ -25,6 +29,7 @@ const usedBytes = ref(0)
 const loading = ref(true)
 const startingCheckout = ref(false)
 const openingPortal = ref(false)
+const selectedProvider = ref<PaymentProvider>('mercadopago')
 const error = ref('')
 const notice = ref('')
 
@@ -37,6 +42,20 @@ const selectedPlan = computed(() => {
   return plans.value.find(plan => plan.id === planId) || null
 })
 const planExceedsUsage = computed(() => Boolean(selectedPlan.value && usedBytes.value > selectedPlan.value.quotaBytes))
+const providerLocked = computed(() =>
+  subscription.value?.status === 'incomplete'
+  && Boolean(subscription.value.paymentProvider),
+)
+function formatBrl(amount: number) {
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(amount)
+}
+
+const selectedPrice = computed(() => {
+  if (!selectedPlan.value) return ''
+  return selectedProvider.value === 'mercadopago'
+    ? formatBrl(selectedPlan.value.priceBrl)
+    : `US$ ${selectedPlan.value.priceUsd.toFixed(2)}`
+})
 
 function authHeaders() {
   return { Authorization: `Bearer ${localStorage.getItem('cloud-seller-id-token')}` }
@@ -58,6 +77,12 @@ async function loadSubscription() {
   plans.value = result.plans
   subscription.value = result.subscription
   usedBytes.value = result.usedBytes
+  if (
+    result.subscription?.paymentProvider
+    && ['active', 'incomplete', 'past_due'].includes(result.subscription.status)
+  ) {
+    selectedProvider.value = result.subscription.paymentProvider
+  }
 }
 
 function handleRequestError(caught: unknown, fallback: string) {
@@ -77,7 +102,8 @@ onMounted(async () => {
     return
   }
 
-  if (route.query.checkout === 'success') {
+  const returnedFromMercadoPago = route.query.provider === 'mercadopago'
+  if (route.query.checkout === 'success' || returnedFromMercadoPago) {
     notice.value = 'Pagamento recebido. Estamos confirmando sua assinatura...'
   } else if (route.query.checkout === 'cancelled') {
     notice.value = 'O pagamento foi cancelado. Nenhuma cobrança foi concluída.'
@@ -85,12 +111,18 @@ onMounted(async () => {
 
   try {
     await loadSubscription()
-    if (route.query.checkout === 'success') {
-      for (let attempt = 0; attempt < 8 && subscription.value?.status !== 'active'; attempt++) {
+    if (route.query.checkout === 'success' || returnedFromMercadoPago) {
+      for (
+        let attempt = 0;
+        attempt < 8
+        && !(subscription.value?.status === 'active' && subscription.value.paymentProvider === selectedProvider.value);
+        attempt++
+      ) {
         await new Promise(resolve => window.setTimeout(resolve, 1500))
         await loadSubscription()
       }
       notice.value = subscription.value?.status === 'active'
+        && subscription.value.paymentProvider === selectedProvider.value
         ? 'Pagamento confirmado. Seu armazenamento está pronto.'
         : 'Pagamento recebido. A confirmação ainda está sendo processada; atualize o status em instantes.'
     }
@@ -113,7 +145,7 @@ async function startCheckout() {
     const result = await $fetch<{ url: string }>('/api/billing/checkout', {
       method: 'POST',
       headers: authHeaders(),
-      body: { planId: selectedPlan.value.id },
+      body: { planId: selectedPlan.value.id, provider: selectedProvider.value },
     })
     window.location.assign(result.url)
   } catch (caught) {
@@ -163,7 +195,7 @@ async function refreshPaymentStatus() {
       <header class="subscription-heading">
         <span class="eyebrow">PAGAMENTO SEGURO</span>
         <h1>Revise seu plano</h1>
-        <p>Você será direcionado ao Stripe para informar os dados de pagamento.</p>
+        <p>Escolha como pagar: Mercado Pago em reais ou Stripe em dólares.</p>
       </header>
 
       <p v-if="error" class="auth-error" role="alert">{{ error }}</p>
@@ -190,9 +222,36 @@ async function refreshPaymentStatus() {
           </div>
           <div class="payment-total">
             <dt>Total por mês</dt>
-            <dd>US$ {{ selectedPlan.priceUsd.toFixed(2) }}</dd>
+            <dd>{{ selectedPrice }}</dd>
           </div>
         </dl>
+
+        <fieldset
+          v-if="subscription?.status !== 'active' && subscription?.status !== 'past_due'"
+          class="payment-provider-picker"
+        >
+          <legend>Forma de pagamento</legend>
+          <label :class="{ 'is-selected': selectedProvider === 'mercadopago' }">
+            <input
+              v-model="selectedProvider"
+              type="radio"
+              name="payment-provider"
+              value="mercadopago"
+              :disabled="providerLocked && subscription?.paymentProvider !== 'mercadopago'"
+            />
+            <span><strong>Mercado Pago</strong><small>{{ formatBrl(selectedPlan.priceBrl) }} / mês · Brasil</small></span>
+          </label>
+          <label :class="{ 'is-selected': selectedProvider === 'stripe' }">
+            <input
+              v-model="selectedProvider"
+              type="radio"
+              name="payment-provider"
+              value="stripe"
+              :disabled="providerLocked && subscription?.paymentProvider !== 'stripe'"
+            />
+            <span><strong>Stripe</strong><small>US$ {{ selectedPlan.priceUsd.toFixed(2) }} / month · internacional</small></span>
+          </label>
+        </fieldset>
 
         <p v-if="planExceedsUsage" class="auth-error" role="alert">
           Seus arquivos excedem a capacidade deste plano. Escolha um plano maior antes de continuar.
@@ -201,15 +260,16 @@ async function refreshPaymentStatus() {
           v-else-if="subscription?.status === 'past_due'"
           class="payment-security-note"
         >
-          Sua assinatura está com pagamento atrasado. Atualize o método de pagamento no portal do Stripe para evitar uma cobrança duplicada.
+          Sua assinatura está com pagamento atrasado. Acesse “Plano e pagamento” para gerenciar a assinatura atual antes de iniciar outra cobrança.
         </p>
         <p v-else class="payment-security-note">
-          O Stripe processa o pagamento. Os dados do seu cartão não são armazenados pelo Cloud Seller.
+          {{ selectedProvider === 'mercadopago' ? 'O Mercado Pago processa as cobranças recorrentes em reais.' : 'O Stripe processa as cobranças recorrentes em dólares.' }}
+          Os dados do seu cartão não são armazenados pelo Cloud Seller.
         </p>
 
         <div class="payment-actions">
           <button
-            v-if="subscription?.status === 'past_due'"
+            v-if="subscription?.status === 'past_due' && subscription.paymentProvider === 'stripe'"
             class="button button-primary"
             type="button"
             :disabled="openingPortal"
@@ -217,6 +277,13 @@ async function refreshPaymentStatus() {
           >
             {{ openingPortal ? 'Abrindo Stripe...' : 'Atualizar pagamento no Stripe' }}
           </button>
+          <NuxtLink
+            v-else-if="subscription?.status === 'past_due'"
+            class="button button-primary"
+            to="/subscription"
+          >
+            Gerenciar assinatura
+          </NuxtLink>
           <button
             v-else-if="subscription?.status !== 'active'"
             class="button button-primary"
@@ -224,7 +291,7 @@ async function refreshPaymentStatus() {
             :disabled="startingCheckout || planExceedsUsage"
             @click="startCheckout"
           >
-            {{ startingCheckout ? 'Conectando ao Stripe...' : 'Continuar para pagamento' }}
+            {{ startingCheckout ? 'Conectando...' : `Continuar com ${selectedProvider === 'mercadopago' ? 'Mercado Pago' : 'Stripe'}` }}
           </button>
           <NuxtLink v-else class="button button-primary" to="/dashboard">
             Acessar meus arquivos <IconSymbol name="arrow-right" />
@@ -238,7 +305,7 @@ async function refreshPaymentStatus() {
             Trocar plano
           </NuxtLink>
           <button
-            v-if="subscription?.status === 'active'"
+            v-if="subscription?.status === 'active' && subscription.paymentProvider === 'stripe'"
             class="button button-plan"
             type="button"
             :disabled="openingPortal"
@@ -246,6 +313,13 @@ async function refreshPaymentStatus() {
           >
             Gerenciar assinatura
           </button>
+          <NuxtLink
+            v-else-if="subscription?.status === 'active'"
+            class="button button-plan"
+            to="/subscription"
+          >
+            Gerenciar assinatura
+          </NuxtLink>
           <button
             v-if="route.query.checkout === 'success' && subscription?.status !== 'active'"
             class="payment-refresh-button"

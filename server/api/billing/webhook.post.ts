@@ -41,13 +41,19 @@ export default defineEventHandler(async (event) => {
 
     const plan = findStoragePlan(planId)!
     if (session.payment_status !== 'paid') {
-      await updateSubscriptionBilling(userId, { status: 'incomplete', planId: plan.id })
+      await updateSubscriptionBilling(userId, {
+        status: 'incomplete',
+        planId: plan.id,
+        paymentProvider: 'stripe',
+        stripeCheckoutSessionId: session.id,
+      })
       return { received: true }
     }
 
     await updateSubscriptionBilling(userId, {
       status: 'active',
       planId: plan.id,
+      paymentProvider: 'stripe',
       stripeCustomerId: typeof session.customer === 'string' ? session.customer : session.customer?.id,
       stripeSubscriptionId: typeof session.subscription === 'string' ? session.subscription : session.subscription?.id,
     })
@@ -68,6 +74,7 @@ export default defineEventHandler(async (event) => {
     await updateSubscriptionBilling(userId, {
       status: getStripeWebhookStatus(subscription),
       planId: plan.id,
+      paymentProvider: 'stripe',
       stripeCustomerId: typeof subscription.customer === 'string' ? subscription.customer : subscription.customer.id,
       stripeSubscriptionId: subscription.id,
       currentPeriodEnd: subscription.items.data[0]?.current_period_end || subscription.cancel_at || 0,

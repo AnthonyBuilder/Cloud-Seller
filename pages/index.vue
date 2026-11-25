@@ -13,6 +13,7 @@ const plans = [
     description: 'Para guardar o que importa.',
     storage: '100 GB',
     priceUsd: 'US$ 7.67',
+    priceBrl: '9,55',
     featured: false,
   },
   {
@@ -21,6 +22,7 @@ const plans = [
     description: 'Mais espaço para sua rotina.',
     storage: '500 GB',
     priceUsd: 'US$ 38.33',
+    priceBrl: '29,95',
     featured: true,
   },
   {
@@ -29,6 +31,7 @@ const plans = [
     description: 'Espaço para todo mundo.',
     storage: '1 TB',
     priceUsd: 'US$ 76.67',
+    priceBrl: '55,90',
     featured: false,
   },
 ]
@@ -170,7 +173,8 @@ const plans = [
             <span v-if="plan.featured" class="popular-label">MAIS ESCOLHIDO</span>
             <h3>{{ plan.name }}</h3>
             <p class="plan-description">{{ plan.description }}</p>
-            <p class="plan-price">{{ plan.priceUsd }}<small>/mês</small></p>
+            <p class="plan-price">R$ {{ plan.priceBrl }}<small>/mês</small></p>
+            <p class="plan-alt-price">Stripe: {{ plan.priceUsd }}/mês</p>
             <div class="plan-storage"><IconSymbol name="cloud-upload" /> {{ plan.storage }} de armazenamento</div>
             <NuxtLink class="button" :class="plan.featured ? 'button-primary' : 'button-plan'" to="/register">
               Criar conta <IconSymbol name="arrow-right" />
@@ -204,7 +208,7 @@ const plans = [
             </a>
           </div>
         </aside>
-        <p class="plans-footnote">As capacidades usam unidades decimais. Os valores e condições comerciais serão definidos antes da ativação das cobranças.</p>
+        <p class="plans-footnote">Mercado Pago cobra em reais; Stripe cobra em dólares. As assinaturas são mensais e as capacidades usam unidades decimais.</p>
       </div>
     </section>
 

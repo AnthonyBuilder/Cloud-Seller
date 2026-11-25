@@ -11,6 +11,7 @@ type Plan = {
   name: string
   storage: string
   priceUsd: number
+  priceBrl: number
 }
 
 type Subscription = {
@@ -18,6 +19,8 @@ type Subscription = {
   name: string
   storage: string
   priceUsd: number
+  priceBrl: number
+  paymentProvider?: 'stripe' | 'mercadopago'
   status: 'active' | 'trial' | 'expired' | 'incomplete' | 'past_due' | 'canceled'
   trialEndsAt?: number
 }
@@ -31,13 +34,14 @@ const selecting = ref('')
 const startingTrial = ref(false)
 const refreshing = ref(false)
 const openingPortal = ref(false)
+const cancellingSubscription = ref(false)
 const error = ref('')
 const notice = ref('')
 let trialExpiryTimer: number | undefined
 const otherPlans = computed(() => plans.value.filter(plan => plan.id !== subscription.value?.planId))
 const canChoosePaidPlan = computed(() => {
   const status = subscription.value?.status
-  return status === 'incomplete' || status === 'canceled' || status === 'trial' || status === 'expired'
+  return status === 'canceled' || status === 'trial' || status === 'expired'
 })
 
 function authHeaders() {
@@ -59,6 +63,10 @@ function formatTrialEnd(timestamp?: number) {
     hour: '2-digit',
     minute: '2-digit',
   }).format(timestamp)
+}
+
+function formatBrl(amount: number) {
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(amount)
 }
 
 function showError(caught: unknown, fallback: string) {
@@ -175,6 +183,29 @@ async function openBillingPortal() {
   }
 }
 
+async function cancelMercadoPagoSubscription() {
+  if (!window.confirm('Deseja cancelar sua assinatura recorrente do Mercado Pago?')) return
+  error.value = ''
+  cancellingSubscription.value = true
+  try {
+    await $fetch('/api/billing/mercadopago/cancel', {
+      method: 'POST',
+      headers: authHeaders(),
+    })
+    await loadSubscription()
+    notice.value = 'Assinatura do Mercado Pago cancelada.'
+  } catch (caught) {
+    if (isUnauthorizedError(caught)) {
+      clearStoredSession()
+      await navigateTo('/login?reauth=1')
+      return
+    }
+    showError(caught, 'Não foi possível cancelar a assinatura do Mercado Pago.')
+  } finally {
+    cancellingSubscription.value = false
+  }
+}
+
 async function refreshPaymentStatus() {
   error.value = ''
   refreshing.value = true
@@ -231,6 +262,9 @@ onBeforeUnmount(() => {
                 <small v-else-if="subscription.status === 'expired'">
                   Período gratuito encerrado · {{ formatSize(usedBytes) }} utilizados
                 </small>
+                <small v-else-if="subscription.paymentProvider === 'mercadopago'">
+                  {{ formatBrl(subscription.priceBrl) }}/mês · {{ formatSize(usedBytes) }} utilizados
+                </small>
                 <small v-else>
                   US$ {{ subscription.priceUsd.toFixed(2) }}/mês · {{ formatSize(usedBytes) }} utilizados
                 </small>
@@ -241,13 +275,15 @@ onBeforeUnmount(() => {
             </article>
             <p class="subscription-payment-note">
               {{ subscription.status === 'active'
-                ? 'Sua assinatura recorrente está ativa e seus arquivos permanecem disponíveis.'
+                ? `Sua assinatura recorrente pelo ${subscription.paymentProvider === 'mercadopago' ? 'Mercado Pago' : 'Stripe'} está ativa e seus arquivos permanecem disponíveis.`
                 : subscription.status === 'trial'
                   ? `Teste grátis de 100 GB até ${formatTrialEnd(subscription.trialEndsAt)}. Sem cobrança automática; depois, seus arquivos continuam acessíveis para visualização e download.`
                   : subscription.status === 'expired'
                     ? 'Seu período gratuito terminou. Você ainda pode visualizar e baixar seus arquivos; escolha um plano pago para enviar novos arquivos.'
                 : subscription.status === 'past_due'
-                  ? 'Atualize o pagamento no portal seguro do Stripe para manter sua assinatura.'
+                  ? subscription.paymentProvider === 'mercadopago'
+                    ? 'A cobrança do Mercado Pago precisa de atenção. Cancele a assinatura antes de escolher um novo meio de pagamento.'
+                    : 'Atualize o pagamento no portal seguro do Stripe para manter sua assinatura.'
                   : subscription.status === 'canceled'
                     ? 'Seu plano foi cancelado. Você pode reativá-lo escolhendo um plano e concluindo o pagamento.'
                     : 'Conclua o pagamento no Stripe para liberar os envios.' }}
@@ -261,7 +297,7 @@ onBeforeUnmount(() => {
                 Acessar meus arquivos <IconSymbol name="arrow-right" />
               </NuxtLink>
               <button
-                v-if="subscription.status === 'active' || subscription.status === 'past_due'"
+                v-if="(subscription.status === 'active' || subscription.status === 'past_due') && subscription.paymentProvider !== 'mercadopago'"
                 class="button button-plan subscription-dashboard-link"
                 type="button"
                 :disabled="openingPortal"
@@ -269,6 +305,16 @@ onBeforeUnmount(() => {
               >
                 {{ openingPortal ? 'Abrindo Stripe...' : subscription.status === 'past_due' ? 'Atualizar pagamento' : 'Gerenciar assinatura' }}
                 <IconSymbol name="credit-card" />
+              </button>
+              <button
+                v-else-if="subscription.status === 'active' || subscription.status === 'past_due'"
+                class="button button-plan subscription-dashboard-link"
+                type="button"
+                :disabled="cancellingSubscription"
+                @click="cancelMercadoPagoSubscription"
+              >
+                {{ cancellingSubscription ? 'Cancelando...' : 'Cancelar assinatura' }}
+                <IconSymbol name="close" />
               </button>
               <NuxtLink
                 v-else-if="subscription.status === 'incomplete'"
@@ -348,7 +394,8 @@ onBeforeUnmount(() => {
                     <span>{{ plan.storage }} de armazenamento</span>
                   </div>
                 </div>
-                <p class="plan-price"><span>US$</span> {{ plan.priceUsd.toFixed(2) }}<small>/mês</small></p>
+                <p class="plan-price">{{ formatBrl(plan.priceBrl) }}<small>/mês</small></p>
+                <p class="plan-alt-price">Stripe: US$ {{ plan.priceUsd.toFixed(2) }}/mês</p>
                 <button
                   class="button button-plan"
                   type="button"
@@ -393,7 +440,8 @@ onBeforeUnmount(() => {
         >
           <span v-if="plan.id === 'pro'" class="popular-label">MAIS ESCOLHIDO</span>
           <h2>{{ plan.name }}</h2>
-          <p class="plan-price">US$ {{ plan.priceUsd.toFixed(2) }}<small>/mês</small></p>
+          <p class="plan-price">{{ formatBrl(plan.priceBrl) }}<small>/mês</small></p>
+          <p class="plan-alt-price">Stripe: US$ {{ plan.priceUsd.toFixed(2) }}/mês</p>
           <div class="plan-storage"><IconSymbol name="cloud-upload" /> {{ plan.storage }} de armazenamento</div>
           <p class="subscription-used">Arquivos atuais: {{ formatSize(usedBytes) }}</p>
           <button
@@ -409,7 +457,7 @@ onBeforeUnmount(() => {
       </div>
 
       <p v-if="!subscription" class="plans-footnote">
-        O teste gratuito dura 24 horas, sem cobrança automática. Planos pagos são mensais e cobrados em USD.
+        O teste gratuito dura 24 horas, sem cobrança automática. Mercado Pago cobra mensalmente em reais; Stripe cobra mensalmente em dólares.
       </p>
     </section>
   </main>

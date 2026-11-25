@@ -28,6 +28,8 @@ export default defineEventHandler(async (event) => {
       storage: plan.storage,
       quotaBytes: plan.quotaBytes,
       priceUsd: plan.priceUsd,
+      priceBrl: plan.priceBrl,
+      paymentProvider: record.paymentProvider || (record.stripeSubscriptionId ? 'stripe' : undefined),
       status: getSubscriptionStatus(record),
       trialEndsAt: record.trialEndsAt,
     },

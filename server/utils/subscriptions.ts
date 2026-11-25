@@ -4,22 +4,27 @@ import { ListObjectsV2Command } from '@aws-sdk/client-s3'
 import { getFileCategory, type FileCategory } from '../../utils/file-types'
 
 export const STORAGE_PLANS = [
-  { id: 'essencial', name: 'Essencial', storage: '100 GB', quotaBytes: 100_000_000_000, priceUsd: 7.67, priceCents: 767 },
-  { id: 'pro', name: 'Pro', storage: '500 GB', quotaBytes: 500_000_000_000, priceUsd: 38.33, priceCents: 3833 },
-  { id: 'familia', name: 'Família', storage: '1 TB', quotaBytes: 1_000_000_000_000, priceUsd: 76.67, priceCents: 7667 },
+  { id: 'essencial', name: 'Essencial', storage: '100 GB', quotaBytes: 100_000_000_000, priceUsd: 7.67, priceCents: 767, priceBrl: 9.55, priceBrlCents: 955 },
+  { id: 'pro', name: 'Pro', storage: '500 GB', quotaBytes: 500_000_000_000, priceUsd: 38.33, priceCents: 3833, priceBrl: 29.95, priceBrlCents: 2995 },
+  { id: 'familia', name: 'Família', storage: '1 TB', quotaBytes: 1_000_000_000_000, priceUsd: 76.67, priceCents: 7667, priceBrl: 55.90, priceBrlCents: 5590 },
 ] as const
 
 export const FREE_TRIAL_PLAN_ID = 'essencial'
 export const FREE_TRIAL_DURATION_MS = 24 * 60 * 60 * 1000
 
 export type StoragePlan = typeof STORAGE_PLANS[number]
+export type PaymentProvider = 'stripe' | 'mercadopago'
 export type SubscriptionRecord = {
   userId: string
   planId: StoragePlan['id']
   status: 'active' | 'incomplete' | 'past_due' | 'canceled' | 'trial'
   trialEndsAt?: number
+  paymentProvider?: PaymentProvider
   stripeCustomerId?: string
   stripeSubscriptionId?: string
+  stripeCheckoutSessionId?: string
+  mercadoPagoPreapprovalId?: string
+  mercadoPagoInitPoint?: string
   currentPeriodEnd?: number
   cancelAtPeriodEnd?: boolean
   pendingUploadKey?: string
@@ -78,6 +83,7 @@ export function canStartFreeTrial(subscription?: SubscriptionRecord) {
   if (!subscription) return true
   return !subscription.trialEndsAt
     && !subscription.stripeSubscriptionId
+    && !subscription.mercadoPagoPreapprovalId
     && (subscription.status === 'incomplete' || subscription.status === 'canceled')
 }
 
@@ -167,7 +173,7 @@ export async function createFreeTrialSubscription(
       TableName: tableName,
       Key: { userId },
       UpdateExpression: 'SET #status = :trial, planId = :planId, trialEndsAt = :trialEndsAt REMOVE currentPeriodEnd, cancelAtPeriodEnd',
-      ConditionExpression: 'attribute_not_exists(trialEndsAt) AND (attribute_not_exists(stripeSubscriptionId) OR stripeSubscriptionId = :empty) AND (#status = :incomplete OR #status = :canceled)',
+      ConditionExpression: 'attribute_not_exists(trialEndsAt) AND (attribute_not_exists(stripeSubscriptionId) OR stripeSubscriptionId = :empty) AND (attribute_not_exists(mercadoPagoPreapprovalId) OR mercadoPagoPreapprovalId = :empty) AND (#status = :incomplete OR #status = :canceled)',
       ExpressionAttributeNames: { '#status': 'status' },
       ExpressionAttributeValues: {
         ':trial': 'trial',
@@ -194,8 +200,12 @@ export async function updateSubscriptionBilling(
   values: {
     status: SubscriptionRecord['status']
     planId: StoragePlan['id']
+    paymentProvider?: PaymentProvider
     stripeCustomerId?: string
     stripeSubscriptionId?: string
+    stripeCheckoutSessionId?: string
+    mercadoPagoPreapprovalId?: string
+    mercadoPagoInitPoint?: string
     currentPeriodEnd?: number
     cancelAtPeriodEnd?: boolean
   },
@@ -203,15 +213,56 @@ export async function updateSubscriptionBilling(
   await getDocumentClient().send(new UpdateCommand({
     TableName: getTableName(),
     Key: { userId },
-    UpdateExpression: 'SET #status = :status, planId = :planId, stripeCustomerId = :customerId, stripeSubscriptionId = :subscriptionId, currentPeriodEnd = :periodEnd, cancelAtPeriodEnd = :cancelAtPeriodEnd',
+    UpdateExpression: 'SET #status = :status, planId = :planId, paymentProvider = :paymentProvider, stripeCustomerId = :customerId, stripeSubscriptionId = :subscriptionId, stripeCheckoutSessionId = :checkoutSessionId, mercadoPagoPreapprovalId = :preapprovalId, mercadoPagoInitPoint = :initPoint, currentPeriodEnd = :periodEnd, cancelAtPeriodEnd = :cancelAtPeriodEnd',
     ExpressionAttributeNames: { '#status': 'status' },
     ExpressionAttributeValues: {
       ':status': values.status,
       ':planId': values.planId,
+      ':paymentProvider': values.paymentProvider || 'stripe',
       ':customerId': values.stripeCustomerId || '',
       ':subscriptionId': values.stripeSubscriptionId || '',
+      ':checkoutSessionId': values.stripeCheckoutSessionId || '',
+      ':preapprovalId': values.mercadoPagoPreapprovalId || '',
+      ':initPoint': values.mercadoPagoInitPoint || '',
       ':periodEnd': values.currentPeriodEnd || 0,
       ':cancelAtPeriodEnd': Boolean(values.cancelAtPeriodEnd),
+    },
+  }))
+}
+
+export async function saveStripeCheckoutSession(userId: string, sessionId: string) {
+  await getDocumentClient().send(new UpdateCommand({
+    TableName: getTableName(),
+    Key: { userId },
+    UpdateExpression: 'SET stripeCheckoutSessionId = :sessionId',
+    ConditionExpression: 'paymentProvider = :provider AND (#status = :incomplete OR #status = :active)',
+    ExpressionAttributeNames: { '#status': 'status' },
+    ExpressionAttributeValues: {
+      ':sessionId': sessionId,
+      ':provider': 'stripe',
+      ':incomplete': 'incomplete',
+      ':active': 'active',
+    },
+  }))
+}
+
+export async function saveMercadoPagoCheckout(
+  userId: string,
+  preapprovalId: string,
+  initPoint: string,
+) {
+  await getDocumentClient().send(new UpdateCommand({
+    TableName: getTableName(),
+    Key: { userId },
+    UpdateExpression: 'SET mercadoPagoPreapprovalId = :preapprovalId, mercadoPagoInitPoint = :initPoint',
+    ConditionExpression: 'paymentProvider = :provider AND (#status = :incomplete OR #status = :active)',
+    ExpressionAttributeNames: { '#status': 'status' },
+    ExpressionAttributeValues: {
+      ':preapprovalId': preapprovalId,
+      ':initPoint': initPoint,
+      ':provider': 'mercadopago',
+      ':incomplete': 'incomplete',
+      ':active': 'active',
     },
   }))
 }

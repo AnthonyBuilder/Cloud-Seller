@@ -5939,3 +5939,86 @@ body::before {
     transition: none;
   }
 }
+
+.plan-alt-price {
+  margin: -12px 0 15px;
+  color: #78889a;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.home-page .plan-alt-price {
+  margin: -11px 0 15px;
+  color: #7d8fa2;
+  font-size: 10px;
+}
+
+.payment-provider-picker {
+  display: grid;
+  gap: 9px;
+  margin: 0 0 18px;
+  padding: 14px;
+  border: 1px solid #e1e9f2;
+  border-radius: 12px;
+  background: #f9fbfd;
+}
+
+.payment-provider-picker legend {
+  padding: 0 5px;
+  color: #52677e;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.payment-provider-picker label {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 12px;
+  border: 1px solid #e0e7ef;
+  border-radius: 9px;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color .18s ease, background .18s ease, box-shadow .18s ease;
+}
+
+.payment-provider-picker label.is-selected {
+  border-color: #438ac7;
+  background: #f2f8fd;
+  box-shadow: 0 0 0 2px rgba(67, 138, 199, .1);
+}
+
+.payment-provider-picker label:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: .65;
+}
+
+.payment-provider-picker input {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  accent-color: #1769bd;
+}
+
+.payment-provider-picker label > span {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.payment-provider-picker strong {
+  color: #294560;
+  font-size: 12px;
+}
+
+.payment-provider-picker small {
+  color: #73859a;
+  font-size: 10px;
+}
+
+@media (max-width: 480px) {
+  .payment-provider-picker {
+    padding: 11px;
+  }
+}

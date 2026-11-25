@@ -20,6 +20,8 @@ export default defineNuxtConfig({
     dynamodbTable: process.env.DYNAMODB_TABLE || '',
     stripeSecretKey: process.env.STRIPE_SECRET_KEY || '',
     stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
+    mercadoPagoAccessToken: process.env.MERCADOPAGO_ACCESS_TOKEN || '',
+    mercadoPagoWebhookSecret: process.env.MERCADOPAGO_WEBHOOK_SECRET || '',
     public: {
       cognitoDomain: process.env.NUXT_PUBLIC_COGNITO_DOMAIN || '',
       cognitoClientId: process.env.COGNITO_CLIENT_ID || '',
