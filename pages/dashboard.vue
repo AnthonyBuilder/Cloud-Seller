@@ -1030,7 +1030,6 @@ function categoryIconName(category: FileCategory): 'photo' | 'pdf' | 'spreadshee
         <NuxtLink to="/dashboard" :class="{ active: currentCollection === 'all' }"><IconSymbol name="grid" /> Meus arquivos</NuxtLink>
         <NuxtLink to="/dashboard?view=recent" :class="{ active: currentCollection === 'recent' }"><IconSymbol name="clock" /> Recentes</NuxtLink>
         <NuxtLink to="/dashboard?view=favorites" :class="{ active: currentCollection === 'favorites' }"><IconSymbol name="star" /> Favoritos</NuxtLink>
-        <a href="/dashboard?view=shared"><IconSymbol name="share" /> Compartilhados</a>
       </nav>
 
       <div class="storage-summary">
@@ -1051,9 +1050,13 @@ function categoryIconName(category: FileCategory): 'photo' | 'pdf' | 'spreadshee
 
     <section class="dashboard-main">
       <header class="dashboard-header">
-        <div>
+        <div class="dashboard-heading-copy">
           <p>Olá, {{ session?.name || 'usuário' }}</p>
-          <h1>{{ currentCollection === 'recent' ? 'Recentes' : currentCollection === 'favorites' ? 'Favoritos' : 'Meus arquivos' }}</h1>
+          <div class="dashboard-title-row">
+            <h1>{{ currentCollection === 'recent' ? 'Recentes' : currentCollection === 'favorites' ? 'Favoritos' : 'Meus arquivos' }}</h1>
+            <span class="dashboard-item-count">{{ itemCount }} {{ itemCount === 1 ? 'item' : 'itens' }}</span>
+          </div>
+          <p class="dashboard-subtitle">Encontre e organize seus arquivos em um só lugar.</p>
         </div>
         <div class="user-avatar">{{ session?.name?.charAt(0).toUpperCase() || 'U' }}</div>
       </header>
@@ -1223,7 +1226,7 @@ function categoryIconName(category: FileCategory): 'photo' | 'pdf' | 'spreadshee
       <p class="drop-hint">
         <template v-if="currentCollection === 'recent'">Arquivos modificados nos últimos 30 dias. </template>
         <template v-else-if="currentCollection === 'favorites'">Favoritos salvos neste navegador. </template>
-        Você também pode arrastar arquivos e soltá-los na lista abaixo.
+        Arraste e solte arquivos aqui ou use “Enviar arquivos”.
       </p>
 
       <div
@@ -1375,6 +1378,7 @@ function categoryIconName(category: FileCategory): 'photo' | 'pdf' | 'spreadshee
           </article>
 
           <div v-if="itemCount === 0" class="empty-files">
+            <span class="empty-files-icon"><IconSymbol name="folder" /></span>
             <strong>
               {{ search
                 ? 'Nenhum item encontrado'
