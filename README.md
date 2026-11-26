@@ -38,11 +38,50 @@ e ative os eventos `checkout.session.completed`, `customer.subscription.updated`
 e `customer.subscription.deleted`. O projeto cria os preços recorrentes em USD
 diretamente no Checkout, sem armazenar números de cartão no servidor.
 
+### Cobrança Mercado Pago (reais)
+
+O checkout cria uma assinatura recorrente mensal (`/preapproval`) em BRL e redireciona o
+cliente para o Mercado Pago. O estado da assinatura é atualizado pelo webhook, cuja
+assinatura (`x-signature`) é validada com HMAC-SHA256.
+
+1. No painel do Mercado Pago (Suas integrações), copie o **Access Token de produção**
+   (`APP_USR-...`) e defina `MERCADOPAGO_ACCESS_TOKEN` nas variáveis de ambiente da Vercel.
+   Não use a Public Key, o Client ID nem o Client Secret: o fluxo atual só precisa do Access Token.
+2. Em *Webhooks > Configurar notificações*, informe a URL
+   `https://SEU-DOMINIO/api/billing/mercadopago/webhook`, modo **Produção**, e marque os eventos
+   **Planos e assinaturas** (`subscription_preapproval` e `subscription_authorized_payment`).
+3. Copie a **chave secreta** gerada nessa tela para `MERCADOPAGO_WEBHOOK_SECRET`.
+4. Defina `NUXT_PUBLIC_APP_URL` com o domínio HTTPS de produção, pois ele é usado como
+   `back_url` e `notification_url`. Em `localhost` o checkout não funciona de ponta a ponta
+   (o Mercado Pago não consegue chamar o webhook); teste em um deploy de preview.
+5. Faça um novo deploy depois de salvar as variáveis. Elas nunca devem ir para o Git.
+
+Se o Access Token ou o Client Secret forem expostos (chat, print, repositório), gere novas
+credenciais no painel e atualize a Vercel.
+
+## Planos e preços
+
+Os planos ficam em `utils/plan-catalog.ts`, fonte única para cobrança e página inicial.
+Para mudar um preço, altere apenas esse arquivo.
+
+| Plano     | Espaço | Mercado Pago (BRL) | Stripe (USD) |
+|-----------|--------|--------------------|--------------|
+| Essencial | 100 GB | R$ 14,90/mês       | US$ 3,99/mês |
+| Pro       | 500 GB | R$ 59,90/mês       | US$ 12,99/mês |
+| Família   | 1 TB   | R$ 109,90/mês      | US$ 22,99/mês |
+
+Premissas (revisar quando o câmbio ou a tabela da AWS mudarem): S3 Standard a ~US$ 0,023/GB-mês,
+saída de dados a ~US$ 0,09/GB, dólar a ~R$ 5,80, gateway ~5% + tarifa fixa e impostos ~6%.
+Com uso médio de 60% (100 GB), 45% (500 GB) e 35% (1 TB) da cota, a margem fica entre
+cerca de 25% e 45%. Um cliente que lota 100% da cota gera prejuízo; para reduzir esse risco,
+use ciclo de vida do S3 (por exemplo, mover `Backups/` antigos para classes mais baratas)
+e acompanhe o uso real.
+
 ## Estado do MVP
 
 A aplicação inclui páginas de login, escolha de armazenamento e arquivos, autenticação
 Cognito, armazenamento privado S3 e cotas por cliente. Os planos disponíveis são 100 GB,
-500 GB e 1 TB. Os valores mensais em USD são US$ 7,67, US$ 38,33 e US$ 76,67.
+500 GB e 1 TB, com os valores da tabela acima.
 Contas sem plano podem ativar 100 GB gratuitos por 24 horas, sem cartão e sem cobrança
 automática. Depois do período, os arquivos continuam disponíveis para visualização e
 download, mas novos envios exigem um plano pago. A expiração é aplicada pelo servidor.

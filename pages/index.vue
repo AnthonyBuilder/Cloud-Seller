@@ -6,35 +6,21 @@ useHead({
   ],
 })
 
-const plans = [
-  {
-    id: 'essencial',
-    name: 'Essencial',
-    description: 'Para guardar o que importa.',
-    storage: '100 GB',
-    priceUsd: 'US$ 7.67',
-    priceBrl: '9,55',
-    featured: false,
-  },
-  {
-    id: 'pro',
-    name: 'Pro',
-    description: 'Mais espaço para sua rotina.',
-    storage: '500 GB',
-    priceUsd: 'US$ 38.33',
-    priceBrl: '29,95',
-    featured: true,
-  },
-  {
-    id: 'familia',
-    name: 'Família',
-    description: 'Espaço para todo mundo.',
-    storage: '1 TB',
-    priceUsd: 'US$ 76.67',
-    priceBrl: '55,90',
-    featured: false,
-  },
-]
+const planDetails: Record<string, { description: string; featured: boolean }> = {
+  essencial: { description: 'Para guardar o que importa.', featured: false },
+  pro: { description: 'Mais espaço para sua rotina.', featured: true },
+  familia: { description: 'Espaço para todo mundo.', featured: false },
+}
+
+const plans = STORAGE_PLAN_CATALOG.map(plan => ({
+  id: plan.id,
+  name: plan.name,
+  storage: plan.storage,
+  description: planDetails[plan.id]?.description ?? '',
+  featured: planDetails[plan.id]?.featured ?? false,
+  priceUsd: formatPlanUsd(plan.priceCents),
+  priceBrl: formatPlanBrl(plan.priceBrlCents),
+}))
 </script>
 
 <template>

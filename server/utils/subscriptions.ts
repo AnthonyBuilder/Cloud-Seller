@@ -2,12 +2,10 @@ import { ConditionalCheckFailedException, DynamoDBClient } from '@aws-sdk/client
 import { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb'
 import { ListObjectsV2Command } from '@aws-sdk/client-s3'
 import { getFileCategory, type FileCategory } from '../../utils/file-types'
+import { STORAGE_PLAN_CATALOG } from '../../utils/plan-catalog'
 
-export const STORAGE_PLANS = [
-  { id: 'essencial', name: 'Essencial', storage: '100 GB', quotaBytes: 100_000_000_000, priceUsd: 7.67, priceCents: 767, priceBrl: 9.55, priceBrlCents: 955 },
-  { id: 'pro', name: 'Pro', storage: '500 GB', quotaBytes: 500_000_000_000, priceUsd: 38.33, priceCents: 3833, priceBrl: 29.95, priceBrlCents: 2995 },
-  { id: 'familia', name: 'Família', storage: '1 TB', quotaBytes: 1_000_000_000_000, priceUsd: 76.67, priceCents: 7667, priceBrl: 55.90, priceBrlCents: 5590 },
-] as const
+// Preços e cotas ficam em utils/plan-catalog.ts (fonte única, também usada na home).
+export const STORAGE_PLANS = STORAGE_PLAN_CATALOG
 
 export const FREE_TRIAL_PLAN_ID = 'essencial'
 export const FREE_TRIAL_DURATION_MS = 24 * 60 * 60 * 1000
