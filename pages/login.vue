@@ -191,6 +191,7 @@ async function resetPassword() {
 
 <template>
   <main class="auth-page">
+    <ThemeToggle class="theme-toggle-floating" />
     <a class="brand auth-brand" href="/" aria-label="Cloud Seller, início">
       <span class="brand-mark" aria-hidden="true">
         <IconSymbol name="cloud-upload" />

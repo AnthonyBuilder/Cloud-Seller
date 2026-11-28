@@ -100,6 +100,7 @@ async function resendCode() {
 
 <template>
   <main class="auth-page">
+    <ThemeToggle class="theme-toggle-floating" />
     <NuxtLink class="brand auth-brand" to="/" aria-label="Cloud Seller, início">
       <span class="brand-mark" aria-hidden="true">
         <IconSymbol name="cloud-upload" />

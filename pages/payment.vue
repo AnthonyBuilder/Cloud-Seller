@@ -210,6 +210,7 @@ async function refreshPaymentStatus() {
 
 <template>
   <main class="subscription-page payment-page">
+    <ThemeToggle class="theme-toggle-floating" />
     <section class="subscription-content">
       <NuxtLink class="brand auth-brand" to="/" aria-label="Cloud Seller, início">
         <span class="brand-mark" aria-hidden="true"><IconSymbol name="cloud-upload" /></span>

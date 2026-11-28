@@ -133,6 +133,7 @@ function logout() {
 
 <template>
   <main class="auth-page account-page">
+    <ThemeToggle class="theme-toggle-floating" />
     <NuxtLink class="brand auth-brand" to="/dashboard" aria-label="Cloud Seller, meus arquivos">
       <span class="brand-mark" aria-hidden="true"><IconSymbol name="cloud-upload" /></span>
       <span>cloud seller<span class="brand-dot">.</span></span>

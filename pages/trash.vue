@@ -126,6 +126,7 @@ function emptyTrash() {
 
 <template>
   <main class="trash-page page-wrap">
+    <ThemeToggle class="theme-toggle-floating" />
     <NuxtLink class="brand" to="/dashboard" aria-label="Cloud Seller, meus arquivos">
       <span class="brand-mark" aria-hidden="true"><IconSymbol name="cloud-upload" /></span>
       <span>cloud seller<span class="brand-dot">.</span></span>
