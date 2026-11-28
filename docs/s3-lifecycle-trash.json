@@ -1,0 +1,11 @@
+{
+  "Rules": [
+    {
+      "ID": "expirar-lixeira",
+      "Status": "Enabled",
+      "Filter": { "Prefix": "trash/" },
+      "Expiration": { "Days": 31 },
+      "AbortIncompleteMultipartUpload": { "DaysAfterInitiation": 7 }
+    }
+  ]
+}

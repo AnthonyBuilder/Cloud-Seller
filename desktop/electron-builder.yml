@@ -6,10 +6,13 @@ files:
   - "**/*"
   - "!release/**"
   - "!node_modules/.cache/**"
+# Nomes de arquivo fixos: o site aponta para .../releases/latest/download/<nome>.
 mac:
   category: public.app-category.utilities
   target:
-    - dmg
+    - target: dmg
+      arch: universal
+  artifactName: Cloud-Seller-Backup.${ext}
 win:
   target:
     - nsis
@@ -17,3 +20,9 @@ nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
+  artifactName: Cloud-Seller-Backup-Setup.${ext}
+linux:
+  target:
+    - AppImage
+  category: Utility
+  artifactName: Cloud-Seller-Backup.${ext}

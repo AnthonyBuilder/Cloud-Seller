@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { getAuthError } from '~/utils/auth-errors'
-import { clearStoredSession, isJwtExpired } from '~/utils/session'
+import { clearStoredSession, isJwtExpired, isUnauthorizedError } from '~/utils/session'
 
 useHead({ title: 'Entrar - Cloud Seller' })
 
@@ -11,7 +11,9 @@ const error = ref('')
 const notice = ref('')
 const confirmationRequired = ref(false)
 const loading = ref(false)
-const mode = ref<'login' | 'forgot' | 'reset'>('login')
+const mode = ref<'login' | 'forgot' | 'reset' | 'mfa'>('login')
+const mfaSession = ref('')
+const mfaCode = ref('')
 const resetCode = ref('')
 const newPassword = ref('')
 
@@ -68,22 +70,66 @@ async function login() {
 
   loading.value = true
   try {
-    const response = await $fetch<{ idToken: string; accessToken: string }>('/api/auth/login', {
+    const response = await $fetch<{ idToken?: string; accessToken?: string; mfaRequired?: boolean; session?: string }>('/api/auth/login', {
       method: 'POST',
       body: { email: normalizedEmail, password: password.value },
     })
-    localStorage.setItem('cloud-seller-id-token', response.idToken)
-    localStorage.setItem('cloud-seller-access-token', response.accessToken)
-    localStorage.setItem('cloud-seller-session', JSON.stringify({
-      name: normalizedEmail.split('@')[0],
-      email: normalizedEmail,
-    }))
+    if (response.mfaRequired && response.session) {
+      mfaSession.value = response.session
+      mfaCode.value = ''
+      password.value = ''
+      mode.value = 'mfa'
+      return
+    }
+    if (!response.idToken || !response.accessToken) throw new Error('missing tokens')
+    finishLogin(normalizedEmail, response.idToken, response.accessToken)
     password.value = ''
     await navigateTo('/subscription')
   } catch (caught) {
     const apiError = getAuthError(caught, 'Não foi possível entrar. Tente novamente.')
     error.value = apiError.message
     confirmationRequired.value = apiError.code === 'USER_NOT_CONFIRMED'
+  } finally {
+    loading.value = false
+  }
+}
+
+function finishLogin(normalizedEmail: string, idToken: string, accessToken: string) {
+  localStorage.setItem('cloud-seller-id-token', idToken)
+  localStorage.setItem('cloud-seller-access-token', accessToken)
+  localStorage.setItem('cloud-seller-session', JSON.stringify({
+    name: normalizedEmail.split('@')[0],
+    email: normalizedEmail,
+  }))
+}
+
+async function submitMfa() {
+  error.value = ''
+  notice.value = ''
+  const code = mfaCode.value.replace(/\s/g, '')
+  if (!/^\d{6}$/.test(code)) {
+    error.value = 'Informe o código de 6 dígitos do aplicativo autenticador.'
+    return
+  }
+
+  loading.value = true
+  try {
+    const normalizedEmail = email.value.trim().toLowerCase()
+    const response = await $fetch<{ idToken: string; accessToken: string }>('/api/auth/mfa-login', {
+      method: 'POST',
+      body: { email: normalizedEmail, session: mfaSession.value, code },
+    })
+    finishLogin(normalizedEmail, response.idToken, response.accessToken)
+    mfaSession.value = ''
+    mfaCode.value = ''
+    await navigateTo('/subscription')
+  } catch (caught) {
+    const apiError = getAuthError(caught, 'Não foi possível validar o código. Tente novamente.')
+    error.value = apiError.message
+    if (isUnauthorizedError(caught)) {
+      mode.value = 'login'
+      mfaSession.value = ''
+    }
   } finally {
     loading.value = false
   }
@@ -156,12 +202,14 @@ async function resetPassword() {
       <div>
         <span class="eyebrow">SUA NUVEM</span>
         <h1 id="login-title">
-          {{ mode === 'login' ? 'Bem-vindo de volta' : mode === 'forgot' ? 'Recupere sua senha' : 'Redefina sua senha' }}
+          {{ mode === 'login' ? 'Bem-vindo de volta' : mode === 'mfa' ? 'Verificação em duas etapas' : mode === 'forgot' ? 'Recupere sua senha' : 'Redefina sua senha' }}
         </h1>
         <p>
           {{ mode === 'login'
             ? 'Entre para acessar seus arquivos.'
-            : mode === 'forgot'
+            : mode === 'mfa'
+              ? 'Digite o código de 6 dígitos do seu aplicativo autenticador.'
+              : mode === 'forgot'
               ? 'Enviaremos um código ao e-mail da sua conta.'
               : 'Digite o código recebido e escolha uma nova senha.' }}
         </p>
@@ -209,6 +257,28 @@ async function resetPassword() {
         </button>
         <button class="auth-link-button" type="button" :disabled="loading" @click="mode = 'forgot'; error = ''; notice = ''; confirmationRequired = false">
           Esqueci minha senha
+        </button>
+      </form>
+
+      <form v-else-if="mode === 'mfa'" class="auth-form" @submit.prevent="submitMfa">
+        <label>
+          Código do aplicativo autenticador
+          <input
+            v-model="mfaCode"
+            type="text"
+            inputmode="numeric"
+            autocomplete="one-time-code"
+            placeholder="000000"
+            maxlength="7"
+            required
+          />
+        </label>
+        <button class="button button-primary auth-submit" type="submit" :disabled="loading">
+          {{ loading ? 'Verificando...' : 'Confirmar e entrar' }}
+          <IconSymbol v-if="!loading" name="arrow-right" />
+        </button>
+        <button class="auth-link-button" type="button" :disabled="loading" @click="mode = 'login'; error = ''; notice = ''; mfaSession = ''">
+          Voltar para entrar
         </button>
       </form>
 

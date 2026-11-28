@@ -104,6 +104,19 @@ function updateRestoreButton() {
     : 'Restaurar selecionados'
 }
 
+function renderNextBackup() {
+  const note = $('#next-backup')
+  if (!appState.nextNightlyBackup) {
+    note.textContent = ''
+    return
+  }
+  const when = new Date(appState.nextNightlyBackup)
+  const last = appState.settings.lastBackupAt
+    ? ` Último backup completo: ${new Date(appState.settings.lastBackupAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}.`
+    : ''
+  note.textContent = `Próximo backup noturno: ${when <= new Date() ? 'assim que possível' : when.toLocaleString('pt-BR', { weekday: 'short', hour: '2-digit', minute: '2-digit' })}.${last} O computador precisa estar ligado e com este app aberto (ele fica na bandeja).`
+}
+
 async function loadState() {
   try {
     appState = await window.backupApi.getState()
@@ -112,6 +125,9 @@ async function loadState() {
     elements.backupOnChange.checked = appState.settings.backupOnChange
     elements.backupDaily.checked = appState.settings.dailyBackup
     $('#start-at-login').checked = appState.settings.startAtLogin
+    $('#backup-time').value = appState.settings.backupTime || '02:00'
+    $('#retention-days').value = appState.settings.retentionDays || 30
+    renderNextBackup()
     setConnected(appState.connected, appState.encryptedStorage)
   } catch (error) {
     showNotice(error.message, 'error')
@@ -166,7 +182,10 @@ $('#save-button').addEventListener('click', async () => {
       backupOnChange: elements.backupOnChange.checked,
       dailyBackup: elements.backupDaily.checked,
       startAtLogin: $('#start-at-login').checked,
+      backupTime: $('#backup-time').value,
+      retentionDays: Number($('#retention-days').value),
     })
+    await loadState()
     showNotice('Configurações salvas.', 'success')
   } catch (error) {
     showNotice(error.message, 'error')

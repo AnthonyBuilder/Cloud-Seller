@@ -1,26 +1,79 @@
 // Fonte única dos planos e preços. Usada pelo servidor (cobrança) e pelas páginas públicas.
-// Valores em centavos para evitar erros de arredondamento; priceBrl/priceUsd são derivados.
+// Valores em centavos para evitar erros de arredondamento.
 //
-// Premissas de custo (revisar a cada mudança de câmbio ou de preço da AWS):
-// - S3 Standard ~US$ 0,023/GB-mês e saída para a internet ~US$ 0,09/GB
-// - dólar ~R$ 5,80; taxa do gateway ~5% + tarifa fixa; impostos ~6%
-// - uso médio esperado: 60% (100 GB), 45% (500 GB) e 35% (1 TB) da cota
-const plan = <const T extends { priceBrlCents: number; priceCents: number }>(definition: T) => ({
-  ...definition,
-  priceBrl: definition.priceBrlCents / 100,
-  priceUsd: definition.priceCents / 100,
-})
+// Dois "livros de preço" (escolha com NUXT_PUBLIC_PRICE_BOOK):
+// - 'seguro' (padrão): preços para o storage atual em S3 Standard, que cobra pelo download.
+// - 'competitivo': preços próximos do Google One/iCloud. SÓ ative depois de migrar o storage
+//   para um provedor sem taxa de saída (Cloudflare R2 ou Backblaze B2) e de medir o uso real.
+//   Em S3 Standard esses preços dão prejuízo.
+//
+// Moedas: BRL (Mercado Pago), USD e EUR (Stripe). EUR fica desligada até configurar IVA
+// (NUXT_PUBLIC_ENABLE_EUR=true). Os preços de cada moeda são tabelas fixas, nunca conversão ao vivo.
+// Revise as premissas a cada trimestre ou quando o dólar variar mais de 8%.
 
-export const STORAGE_PLAN_CATALOG = [
-  plan({ id: 'essencial', name: 'Essencial', storage: '100 GB', quotaBytes: 100_000_000_000, priceBrlCents: 1490, priceCents: 399 }),
-  plan({ id: 'pro', name: 'Pro', storage: '500 GB', quotaBytes: 500_000_000_000, priceBrlCents: 5990, priceCents: 1299 }),
-  plan({ id: 'familia', name: 'Família', storage: '1 TB', quotaBytes: 1_000_000_000_000, priceBrlCents: 10990, priceCents: 2299 }),
-] as const
+export type Currency = 'BRL' | 'USD' | 'EUR'
+export type PriceBookName = 'seguro' | 'competitivo'
+export type PlanId = 'essencial' | 'pro' | 'familia'
+export type BillingInterval = 'month' | 'year'
 
-export function formatPlanBrl(cents: number) {
-  return (cents / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+// Plano anual = 10 mensalidades (2 meses grátis).
+export const ANNUAL_MONTHS_CHARGED = 10
+
+export function isBillingInterval(value: unknown): value is BillingInterval {
+  return value === 'month' || value === 'year'
 }
 
-export function formatPlanUsd(cents: number) {
-  return `US$ ${(cents / 100).toFixed(2)}`
+type PriceCents = Record<Currency, number>
+
+const BASE_PLANS = [
+  { id: 'essencial', name: 'Essencial', storage: '100 GB', quotaBytes: 100_000_000_000 },
+  { id: 'pro', name: 'Pro', storage: '500 GB', quotaBytes: 500_000_000_000 },
+  { id: 'familia', name: 'Família', storage: '1 TB', quotaBytes: 1_000_000_000_000 },
+] as const satisfies ReadonlyArray<{ id: PlanId; name: string; storage: string; quotaBytes: number }>
+
+export const PRICE_BOOKS: Record<PriceBookName, Record<PlanId, PriceCents>> = {
+  seguro: {
+    essencial: { BRL: 1490, USD: 399, EUR: 369 },
+    pro: { BRL: 5990, USD: 1299, EUR: 1199 },
+    familia: { BRL: 10990, USD: 2299, EUR: 2099 },
+  },
+  competitivo: {
+    essencial: { BRL: 990, USD: 299, EUR: 299 },
+    pro: { BRL: 3490, USD: 899, EUR: 849 },
+    familia: { BRL: 6490, USD: 1599, EUR: 1499 },
+  },
+}
+
+export function resolvePriceBook(value: unknown): PriceBookName {
+  return value === 'competitivo' ? 'competitivo' : 'seguro'
+}
+
+export function buildPlanCatalog(book: PriceBookName = 'seguro') {
+  return BASE_PLANS.map((base) => {
+    const prices = PRICE_BOOKS[book][base.id]
+    return {
+      ...base,
+      priceBrlCents: prices.BRL,
+      priceCents: prices.USD, // USD, mantido por compatibilidade com o checkout do Stripe
+      priceEurCents: prices.EUR,
+      priceBrl: prices.BRL / 100,
+      priceUsd: prices.USD / 100,
+      priceEur: prices.EUR / 100,
+    }
+  })
+}
+
+export type CatalogPlan = ReturnType<typeof buildPlanCatalog>[number]
+
+export function getPlanPriceCents(
+  plan: Pick<CatalogPlan, 'priceBrlCents' | 'priceCents' | 'priceEurCents'>,
+  currency: Currency,
+  interval: BillingInterval = 'month',
+) {
+  const monthly = currency === 'BRL'
+    ? plan.priceBrlCents
+    : currency === 'EUR'
+      ? plan.priceEurCents
+      : plan.priceCents
+  return interval === 'year' ? monthly * ANNUAL_MONTHS_CHARGED : monthly
 }

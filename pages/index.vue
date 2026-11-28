@@ -12,15 +12,22 @@ const planDetails: Record<string, { description: string; featured: boolean }> = 
   familia: { description: 'Espaço para todo mundo.', featured: false },
 }
 
-const plans = STORAGE_PLAN_CATALOG.map(plan => ({
+const { currency, setCurrency, available: availableCurrencies } = useCurrency()
+const { interval, setInterval: setBillingInterval } = useBillingInterval()
+const catalog = usePlanCatalog()
+const plans = computed(() => catalog.map(plan => ({
   id: plan.id,
   name: plan.name,
   storage: plan.storage,
   description: planDetails[plan.id]?.description ?? '',
   featured: planDetails[plan.id]?.featured ?? false,
-  priceUsd: formatPlanUsd(plan.priceCents),
-  priceBrl: formatPlanBrl(plan.priceBrlCents),
-}))
+  price: formatMoney(getPlanPriceCents(plan, currency.value, interval.value), currency.value),
+  perMonth: formatMoney(Math.round(getPlanPriceCents(plan, currency.value, interval.value) / (interval.value === 'year' ? 12 : 1)), currency.value),
+})))
+const cycleLabel = computed(() => (interval.value === 'year' ? 'anual' : 'mensal'))
+const paymentNote = computed(() => currency.value === 'BRL'
+  ? `Cobrança ${cycleLabel.value} em reais, no cartão, pelo Mercado Pago. Cancele quando quiser.`
+  : `Cobrança ${cycleLabel.value} em ${currency.value === 'EUR' ? 'euros' : 'dólares'}, no cartão internacional, pelo Stripe. Cancele quando quiser.`)
 </script>
 
 <template>
@@ -149,6 +156,25 @@ const plans = STORAGE_PLAN_CATALOG.map(plan => ({
           <h2>Escolha seu espaço.</h2>
           <p>Sem complicação. Encontre o tamanho certo para sua vida.</p>
         </div>
+        <div class="pricing-controls">
+          <div class="currency-switch" role="group" aria-label="Ciclo de cobrança">
+            <button type="button" class="currency-switch-option" :class="{ 'is-active': interval === 'month' }" :aria-pressed="interval === 'month'" @click="setBillingInterval('month')">Mensal</button>
+            <button type="button" class="currency-switch-option" :class="{ 'is-active': interval === 'year' }" :aria-pressed="interval === 'year'" @click="setBillingInterval('year')">Anual · 2 meses grátis</button>
+          </div>
+          <div class="currency-switch" role="group" aria-label="Moeda">
+            <button
+              v-for="option in availableCurrencies"
+              :key="option"
+              type="button"
+              class="currency-switch-option"
+              :class="{ 'is-active': currency === option }"
+              :aria-pressed="currency === option"
+              @click="setCurrency(option)"
+            >
+              {{ option }}
+            </button>
+          </div>
+        </div>
         <div class="plan-grid">
           <article
             v-for="plan in plans"
@@ -159,8 +185,8 @@ const plans = STORAGE_PLAN_CATALOG.map(plan => ({
             <span v-if="plan.featured" class="popular-label">MAIS ESCOLHIDO</span>
             <h3>{{ plan.name }}</h3>
             <p class="plan-description">{{ plan.description }}</p>
-            <p class="plan-price">R$ {{ plan.priceBrl }}<small>/mês</small></p>
-            <p class="plan-alt-price">Stripe: {{ plan.priceUsd }}/mês</p>
+            <p class="plan-price">{{ plan.price }}<small>{{ interval === 'year' ? '/ano' : '/mês' }}</small></p>
+            <p v-if="interval === 'year'" class="plan-alt-price">equivale a {{ plan.perMonth }}/mês</p>
             <div class="plan-storage"><IconSymbol name="cloud-upload" /> {{ plan.storage }} de armazenamento</div>
             <NuxtLink class="button" :class="plan.featured ? 'button-primary' : 'button-plan'" to="/register">
               Criar conta <IconSymbol name="arrow-right" />
@@ -194,7 +220,7 @@ const plans = STORAGE_PLAN_CATALOG.map(plan => ({
             </a>
           </div>
         </aside>
-        <p class="plans-footnote">Mercado Pago cobra em reais; Stripe cobra em dólares. As assinaturas são mensais e as capacidades usam unidades decimais.</p>
+        <p class="plans-footnote">{{ paymentNote }} As capacidades usam unidades decimais (1 GB = 1.000 MB).</p>
       </div>
     </section>
 

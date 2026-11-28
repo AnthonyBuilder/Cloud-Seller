@@ -12,6 +12,7 @@ type Plan = {
   storage: string
   priceUsd: number
   priceBrl: number
+  priceEur: number
 }
 
 type Subscription = {
@@ -20,6 +21,8 @@ type Subscription = {
   storage: string
   priceUsd: number
   priceBrl: number
+  priceEur: number
+  billingInterval?: 'month' | 'year'
   paymentProvider?: 'stripe' | 'mercadopago'
   status: 'active' | 'trial' | 'expired' | 'incomplete' | 'past_due' | 'canceled'
   trialEndsAt?: number
@@ -65,9 +68,29 @@ function formatTrialEnd(timestamp?: number) {
   }).format(timestamp)
 }
 
-function formatBrl(amount: number) {
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(amount)
+const { currency, setCurrency, available: availableCurrencies } = useCurrency()
+const { interval, setInterval: setBillingInterval } = useBillingInterval()
+const intervalSuffix = computed(() => (interval.value === 'year' ? '/ano' : '/mês'))
+
+function formatPrice(plan: { priceBrl: number; priceUsd: number; priceEur: number }) {
+  const monthly = currency.value === 'BRL' ? plan.priceBrl : currency.value === 'EUR' ? plan.priceEur : plan.priceUsd
+  const cents = Math.round(monthly * 100) * (interval.value === 'year' ? ANNUAL_MONTHS_CHARGED : 1)
+  return formatMoney(cents, currency.value)
 }
+
+// Preço que o assinante paga de fato (mesma moeda do provedor e ciclo contratado).
+function formatSubscribed(current: { priceBrl: number; priceUsd: number; billingInterval?: 'month' | 'year' }) {
+  const amount = current.priceBrl !== undefined && subscription.value?.paymentProvider === 'mercadopago' ? current.priceBrl : current.priceUsd
+  const cents = Math.round(amount * 100) * (current.billingInterval === 'year' ? ANNUAL_MONTHS_CHARGED : 1)
+  return `${formatMoney(cents, subscription.value?.paymentProvider === 'mercadopago' ? 'BRL' : 'USD')}${current.billingInterval === 'year' ? '/ano' : '/mês'}`
+}
+
+const paymentNote = computed(() => {
+  const cycle = interval.value === 'year' ? 'anual' : 'mensal'
+  return currency.value === 'BRL'
+    ? `Cobrança ${cycle} em reais, no cartão, pelo Mercado Pago.`
+    : `Cobrança ${cycle} em ${currency.value === 'EUR' ? 'euros' : 'dólares'}, no cartão internacional, pelo Stripe.`
+})
 
 function showError(caught: unknown, fallback: string) {
   error.value = getAuthError(caught, fallback).message
@@ -136,7 +159,7 @@ onMounted(async () => {
 
 async function choosePlan(plan: Plan) {
   selecting.value = plan.id
-  await navigateTo({ path: '/payment', query: { plan: plan.id } })
+  await navigateTo({ path: '/payment', query: { plan: plan.id, interval: interval.value } })
 }
 
 async function startFreeTrial() {
@@ -242,6 +265,26 @@ onBeforeUnmount(() => {
         <p>Selecione uma capacidade para ativar seu armazenamento.</p>
       </header>
 
+      <div v-if="!loading && (!subscription || canChoosePaidPlan)" class="pricing-controls">
+        <div class="currency-switch" role="group" aria-label="Ciclo de cobrança">
+          <button type="button" class="currency-switch-option" :class="{ 'is-active': interval === 'month' }" :aria-pressed="interval === 'month'" @click="setBillingInterval('month')">Mensal</button>
+          <button type="button" class="currency-switch-option" :class="{ 'is-active': interval === 'year' }" :aria-pressed="interval === 'year'" @click="setBillingInterval('year')">Anual · 2 meses grátis</button>
+        </div>
+        <div class="currency-switch" role="group" aria-label="Moeda">
+          <button
+            v-for="option in availableCurrencies"
+            :key="option"
+            type="button"
+            class="currency-switch-option"
+            :class="{ 'is-active': currency === option }"
+            :aria-pressed="currency === option"
+            @click="setCurrency(option)"
+          >
+            {{ option }}
+          </button>
+        </div>
+      </div>
+
       <p v-if="error" class="auth-error" role="alert">{{ error }}</p>
       <p v-if="notice" class="auth-success" role="status">{{ notice }}</p>
       <p v-if="loading" class="subscription-loading">Carregando seu armazenamento...</p>
@@ -263,10 +306,10 @@ onBeforeUnmount(() => {
                   Período gratuito encerrado · {{ formatSize(usedBytes) }} utilizados
                 </small>
                 <small v-else-if="subscription.paymentProvider === 'mercadopago'">
-                  {{ formatBrl(subscription.priceBrl) }}/mês · {{ formatSize(usedBytes) }} utilizados
+                  {{ formatSubscribed(subscription) }} · {{ formatSize(usedBytes) }} utilizados
                 </small>
                 <small v-else>
-                  US$ {{ subscription.priceUsd.toFixed(2) }}/mês · {{ formatSize(usedBytes) }} utilizados
+                  {{ formatSubscribed(subscription) }} · {{ formatSize(usedBytes) }} utilizados
                 </small>
               </div>
               <span class="subscription-status" :class="`status-${subscription.status}`">
@@ -394,8 +437,7 @@ onBeforeUnmount(() => {
                     <span>{{ plan.storage }} de armazenamento</span>
                   </div>
                 </div>
-                <p class="plan-price">{{ formatBrl(plan.priceBrl) }}<small>/mês</small></p>
-                <p class="plan-alt-price">Stripe: US$ {{ plan.priceUsd.toFixed(2) }}/mês</p>
+                <p class="plan-price">{{ formatPrice(plan) }}<small>{{ intervalSuffix }}</small></p>
                 <button
                   class="button button-plan"
                   type="button"
@@ -440,8 +482,7 @@ onBeforeUnmount(() => {
         >
           <span v-if="plan.id === 'pro'" class="popular-label">MAIS ESCOLHIDO</span>
           <h2>{{ plan.name }}</h2>
-          <p class="plan-price">{{ formatBrl(plan.priceBrl) }}<small>/mês</small></p>
-          <p class="plan-alt-price">Stripe: US$ {{ plan.priceUsd.toFixed(2) }}/mês</p>
+          <p class="plan-price">{{ formatPrice(plan) }}<small>{{ intervalSuffix }}</small></p>
           <div class="plan-storage"><IconSymbol name="cloud-upload" /> {{ plan.storage }} de armazenamento</div>
           <p class="subscription-used">Arquivos atuais: {{ formatSize(usedBytes) }}</p>
           <button
@@ -457,7 +498,7 @@ onBeforeUnmount(() => {
       </div>
 
       <p v-if="!subscription" class="plans-footnote">
-        O teste gratuito dura 24 horas, sem cobrança automática. Mercado Pago cobra mensalmente em reais; Stripe cobra mensalmente em dólares.
+        O teste gratuito dura 24 horas, sem cobrança automática. {{ paymentNote }} Cancele quando quiser.
       </p>
     </section>
   </main>

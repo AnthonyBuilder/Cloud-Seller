@@ -1,3 +1,4 @@
+import { decodeJwt } from 'jose'
 import {
   CognitoIdentityProviderClient,
   CognitoIdentityProviderServiceException,
@@ -39,6 +40,14 @@ const cognitoErrors: Record<string, { statusCode: number; message: string }> = {
   NotAuthorizedException: {
     statusCode: 400,
     message: 'A conta já pode estar confirmada. Tente entrar ou solicite um novo código.',
+  },
+  EnableSoftwareTokenMFAException: {
+    statusCode: 400,
+    message: 'O código do aplicativo autenticador está incorreto. Confira e tente novamente.',
+  },
+  SoftwareTokenMFANotFoundException: {
+    statusCode: 400,
+    message: 'A verificação em duas etapas não está habilitada neste serviço. Fale com o suporte.',
   },
   PasswordResetRequiredException: {
     statusCode: 403,
@@ -116,4 +125,18 @@ export function throwCognitoServiceError(error: unknown, operation: string): nev
     statusCode: 503,
     message: 'O Cognito não conseguiu concluir a solicitação. Tente novamente mais tarde.',
   })
+}
+
+// Chamadas de conta (MFA) exigem o access token do Cognito, enviado no cabeçalho x-access-token,
+// além do ID token já validado por requireUser. Conferimos que ambos são do mesmo usuário;
+// a assinatura do access token é validada pelo próprio Cognito em cada chamada.
+export function requireAccessToken(event: Parameters<typeof getHeader>[0], userSub: string) {
+  const token = getHeader(event, 'x-access-token') || ''
+  try {
+    const payload = decodeJwt(token)
+    if (payload.sub === userSub && payload.token_use === 'access') return token
+  } catch {
+    // cai no erro abaixo
+  }
+  throw createError({ statusCode: 401, statusMessage: 'Invalid or expired token' })
 }

@@ -7,6 +7,7 @@ const route = useRoute()
 const email = ref('')
 const password = ref('')
 const showPassword = ref(false)
+const acceptTerms = ref(false)
 const confirmationCode = ref('')
 const step = ref<'signup' | 'confirm'>('signup')
 const error = ref('')
@@ -34,11 +35,16 @@ async function createAccount() {
     return
   }
 
+  if (!acceptTerms.value) {
+    error.value = 'Para criar a conta, aceite os Termos de Uso e a Política de Privacidade.'
+    return
+  }
+
   loading.value = true
   try {
     const result = await $fetch<{ confirmed: boolean; destination: string }>('/api/auth/signup', {
       method: 'POST',
-      body: { email: normalizedEmail, password: password.value },
+      body: { email: normalizedEmail, password: password.value, acceptedTerms: true, termsVersion: TERMS_VERSION },
     })
     email.value = normalizedEmail
     step.value = result.confirmed ? 'signup' : 'confirm'
@@ -146,6 +152,13 @@ async function resendCode() {
           </span>
         </label>
         <p class="auth-hint">Use pelo menos 12 caracteres, incluindo letras maiúsculas, minúsculas e números.</p>
+        <label class="auth-consent">
+          <input v-model="acceptTerms" type="checkbox" required />
+          <span>
+            Li e aceito os <NuxtLink to="/termos" target="_blank">Termos de Uso</NuxtLink>
+            e a <NuxtLink to="/privacidade" target="_blank">Política de Privacidade</NuxtLink>.
+          </span>
+        </label>
         <button class="button button-primary auth-submit" type="submit" :disabled="loading">
           {{ loading ? 'Criando conta...' : 'Criar conta' }}
           <IconSymbol v-if="!loading" name="arrow-right" />

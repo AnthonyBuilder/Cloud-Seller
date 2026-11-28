@@ -1,4 +1,4 @@
-import { canStartFreeTrial, getStorageUsageSummary } from '../utils/subscriptions'
+import { canStartFreeTrial, getStoragePlans, getStorageUsageSummary } from '../utils/subscriptions'
 
 export default defineEventHandler(async (event) => {
   const user = await requireUser(event)
@@ -7,9 +7,10 @@ export default defineEventHandler(async (event) => {
 
   if (!record) {
     return {
-      plans: STORAGE_PLANS,
+      plans: getStoragePlans(),
       subscription: null,
       usedBytes: usage.usedBytes,
+      trashBytes: usage.trashBytes,
       usageByCategory: usage.usageByCategory,
       canStartFreeTrial: true,
     }
@@ -21,7 +22,7 @@ export default defineEventHandler(async (event) => {
   }
 
   return {
-    plans: STORAGE_PLANS,
+    plans: getStoragePlans(),
     subscription: {
       planId: plan.id,
       name: plan.name,
@@ -29,11 +30,14 @@ export default defineEventHandler(async (event) => {
       quotaBytes: plan.quotaBytes,
       priceUsd: plan.priceUsd,
       priceBrl: plan.priceBrl,
+      priceEur: plan.priceEur,
       paymentProvider: record.paymentProvider || (record.stripeSubscriptionId ? 'stripe' : undefined),
       status: getSubscriptionStatus(record),
+      billingInterval: record.billingInterval || 'month',
       trialEndsAt: record.trialEndsAt,
     },
     usedBytes: usage.usedBytes,
+    trashBytes: usage.trashBytes,
     usageByCategory: usage.usageByCategory,
     canStartFreeTrial: canStartFreeTrial(record),
   }

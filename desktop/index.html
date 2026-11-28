@@ -73,7 +73,14 @@
         <fieldset class="schedule-options">
           <legend>Quando fazer backup</legend>
           <label><input id="backup-on-change" type="checkbox" /> Ao detectar alterações</label>
-          <label><input id="backup-daily" type="checkbox" /> Uma vez por dia</label>
+          <label><input id="backup-daily" type="checkbox" /> Backup noturno automático (uma vez por dia)</label>
+          <label class="inline-field">Horário do backup noturno
+            <input id="backup-time" type="time" value="02:00" />
+          </label>
+          <label class="inline-field">Guardar versões antigas por (dias)
+            <input id="retention-days" type="number" min="7" max="365" step="1" value="30" />
+          </label>
+          <p id="next-backup" class="empty-note"></p>
         </fieldset>
         <label class="launch-option"><input id="start-at-login" type="checkbox" /> Iniciar com o computador e continuar em segundo plano</label>
 

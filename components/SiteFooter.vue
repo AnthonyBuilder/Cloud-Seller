@@ -1,3 +1,7 @@
+<script setup lang="ts">
+const company = useCompany()
+</script>
+
 <template>
   <footer class="site-footer page-wrap">
     <div class="footer-main">
@@ -11,9 +15,18 @@
       <NuxtLink to="/como-funciona">Como funciona</NuxtLink>
       <NuxtLink to="/seguranca">Segurança</NuxtLink>
       <NuxtLink to="/sobre">Sobre</NuxtLink>
+      <NuxtLink to="/backup">Baixar backup</NuxtLink>
       <NuxtLink to="/contato">Contato</NuxtLink>
       <NuxtLink to="/login">Entrar</NuxtLink>
     </nav>
-    <span class="footer-copyright">© 2026 Cloud Seller.</span>
+    <nav class="footer-links footer-legal-links" aria-label="Documentos legais">
+      <NuxtLink to="/termos">Termos de Uso</NuxtLink>
+      <NuxtLink to="/privacidade">Privacidade</NuxtLink>
+      <NuxtLink to="/reembolso">Cancelamento e reembolso</NuxtLink>
+    </nav>
+    <span class="footer-copyright">
+      © 2026 Cloud Seller.
+      <template v-if="company.configured"> {{ company.name }} · CNPJ {{ company.cnpj }}</template>
+    </span>
   </footer>
 </template>

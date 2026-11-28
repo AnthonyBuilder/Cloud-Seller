@@ -13,9 +13,13 @@ type Plan = {
   quotaBytes: number
   priceUsd: number
   priceBrl: number
+  priceCents: number
+  priceBrlCents: number
+  priceEurCents: number
 }
 
 type Subscription = {
+  billingInterval?: 'month' | 'year'
   planId: string
   status: 'active' | 'trial' | 'expired' | 'incomplete' | 'past_due' | 'canceled'
   paymentProvider?: 'stripe' | 'mercadopago'
@@ -29,7 +33,6 @@ const usedBytes = ref(0)
 const loading = ref(true)
 const startingCheckout = ref(false)
 const openingPortal = ref(false)
-const selectedProvider = ref<PaymentProvider>('mercadopago')
 const error = ref('')
 const notice = ref('')
 
@@ -46,16 +49,37 @@ const providerLocked = computed(() =>
   subscription.value?.status === 'incomplete'
   && Boolean(subscription.value.paymentProvider),
 )
-function formatBrl(amount: number) {
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(amount)
+const { currency, setCurrency, available: availableCurrencies } = useCurrency()
+const providerOf = providerForCurrency
+
+// Com assinatura ativa, atrasada ou pagamento pendente, a moeda segue o provedor já escolhido.
+const lockedProvider = computed<PaymentProvider | null>(() => {
+  const current = subscription.value
+  if (!current?.paymentProvider) return null
+  return ['active', 'incomplete', 'past_due'].includes(current.status) ? current.paymentProvider : null
+})
+const effectiveCurrency = computed(() =>
+  lockedProvider.value ? currencyForProvider(lockedProvider.value) : currency.value,
+)
+const selectedProvider = computed<PaymentProvider>(() => providerForCurrency(effectiveCurrency.value))
+
+const { interval, setInterval: setBillingInterval } = useBillingInterval()
+// Link de retorno (?interval=) vale mais que o cookie; com assinatura ativa/atrasada vale o ciclo contratado.
+const effectiveInterval = computed<'month' | 'year'>(() => {
+  const current = subscription.value
+  if (current && (current.status === 'active' || current.status === 'past_due') && current.billingInterval) {
+    return current.billingInterval
+  }
+  return isBillingInterval(route.query.interval) ? route.query.interval : interval.value
+})
+
+function priceFor(plan: Plan, option: 'BRL' | 'USD' | 'EUR') {
+  return formatMoney(getPlanPriceCents(plan, option, effectiveInterval.value), option)
 }
 
-const selectedPrice = computed(() => {
-  if (!selectedPlan.value) return ''
-  return selectedProvider.value === 'mercadopago'
-    ? formatBrl(selectedPlan.value.priceBrl)
-    : `US$ ${selectedPlan.value.priceUsd.toFixed(2)}`
-})
+const selectedPrice = computed(() =>
+  selectedPlan.value ? priceFor(selectedPlan.value, effectiveCurrency.value) : '',
+)
 
 function authHeaders() {
   return { Authorization: `Bearer ${localStorage.getItem('cloud-seller-id-token')}` }
@@ -77,12 +101,6 @@ async function loadSubscription() {
   plans.value = result.plans
   subscription.value = result.subscription
   usedBytes.value = result.usedBytes
-  if (
-    result.subscription?.paymentProvider
-    && ['active', 'incomplete', 'past_due'].includes(result.subscription.status)
-  ) {
-    selectedProvider.value = result.subscription.paymentProvider
-  }
 }
 
 function handleRequestError(caught: unknown, fallback: string) {
@@ -137,6 +155,12 @@ onMounted(async () => {
   }
 })
 
+function chooseInterval(next: 'month' | 'year') {
+  setBillingInterval(next)
+  // O parâmetro ?interval= do link de retorno não pode sobrepor a escolha feita agora.
+  void navigateTo({ path: route.path, query: { ...route.query, interval: next } }, { replace: true })
+}
+
 async function startCheckout() {
   if (!selectedPlan.value || planExceedsUsage.value) return
   error.value = ''
@@ -145,7 +169,7 @@ async function startCheckout() {
     const result = await $fetch<{ url: string }>('/api/billing/checkout', {
       method: 'POST',
       headers: authHeaders(),
-      body: { planId: selectedPlan.value.id, provider: selectedProvider.value },
+      body: { planId: selectedPlan.value.id, currency: effectiveCurrency.value, interval: effectiveInterval.value },
     })
     window.location.assign(result.url)
   } catch (caught) {
@@ -195,7 +219,7 @@ async function refreshPaymentStatus() {
       <header class="subscription-heading">
         <span class="eyebrow">PAGAMENTO SEGURO</span>
         <h1>Revise seu plano</h1>
-        <p>Escolha como pagar: Mercado Pago em reais ou Stripe em dólares.</p>
+        <p>Confirme a moeda e conclua o pagamento com segurança.</p>
       </header>
 
       <p v-if="error" class="auth-error" role="alert">{{ error }}</p>
@@ -218,10 +242,10 @@ async function refreshPaymentStatus() {
           </div>
           <div>
             <dt>Recorrência</dt>
-            <dd>Mensal</dd>
+            <dd>{{ effectiveInterval === 'year' ? 'Anual (2 meses grátis)' : 'Mensal' }}</dd>
           </div>
           <div class="payment-total">
-            <dt>Total por mês</dt>
+            <dt>{{ effectiveInterval === 'year' ? 'Total por ano' : 'Total por mês' }}</dt>
             <dd>{{ selectedPrice }}</dd>
           </div>
         </dl>
@@ -230,26 +254,28 @@ async function refreshPaymentStatus() {
           v-if="subscription?.status !== 'active' && subscription?.status !== 'past_due'"
           class="payment-provider-picker"
         >
-          <legend>Forma de pagamento</legend>
-          <label :class="{ 'is-selected': selectedProvider === 'mercadopago' }">
+          <legend>Ciclo, moeda e forma de pagamento</legend>
+          <div class="currency-switch payment-interval-switch" role="group" aria-label="Ciclo de cobrança">
+            <button type="button" class="currency-switch-option" :class="{ 'is-active': effectiveInterval === 'month' }" :aria-pressed="effectiveInterval === 'month'" @click="chooseInterval('month')">Mensal</button>
+            <button type="button" class="currency-switch-option" :class="{ 'is-active': effectiveInterval === 'year' }" :aria-pressed="effectiveInterval === 'year'" @click="chooseInterval('year')">Anual · 2 meses grátis</button>
+          </div>
+          <label
+            v-for="option in availableCurrencies"
+            :key="option"
+            :class="{ 'is-selected': effectiveCurrency === option }"
+          >
             <input
-              v-model="selectedProvider"
               type="radio"
-              name="payment-provider"
-              value="mercadopago"
-              :disabled="providerLocked && subscription?.paymentProvider !== 'mercadopago'"
+              name="payment-currency"
+              :value="option"
+              :checked="effectiveCurrency === option"
+              :disabled="providerLocked && providerOf(option) !== subscription?.paymentProvider"
+              @change="setCurrency(option)"
             />
-            <span><strong>Mercado Pago</strong><small>{{ formatBrl(selectedPlan.priceBrl) }} / mês · Brasil</small></span>
-          </label>
-          <label :class="{ 'is-selected': selectedProvider === 'stripe' }">
-            <input
-              v-model="selectedProvider"
-              type="radio"
-              name="payment-provider"
-              value="stripe"
-              :disabled="providerLocked && subscription?.paymentProvider !== 'stripe'"
-            />
-            <span><strong>Stripe</strong><small>US$ {{ selectedPlan.priceUsd.toFixed(2) }} / month · internacional</small></span>
+            <span>
+              <strong>{{ option === 'BRL' ? 'Reais (BRL)' : option === 'EUR' ? 'Euros (EUR)' : 'Dólares (USD)' }}</strong>
+              <small>{{ priceFor(selectedPlan, option) }} / {{ effectiveInterval === 'year' ? 'ano' : 'mês' }} · {{ providerOf(option) === 'mercadopago' ? 'Mercado Pago, cartão' : 'Stripe, cartão internacional' }}</small>
+            </span>
           </label>
         </fieldset>
 
@@ -263,7 +289,7 @@ async function refreshPaymentStatus() {
           Sua assinatura está com pagamento atrasado. Acesse “Plano e pagamento” para gerenciar a assinatura atual antes de iniciar outra cobrança.
         </p>
         <p v-else class="payment-security-note">
-          {{ selectedProvider === 'mercadopago' ? 'O Mercado Pago processa as cobranças recorrentes em reais.' : 'O Stripe processa as cobranças recorrentes em dólares.' }}
+          {{ selectedProvider === 'mercadopago' ? 'O Mercado Pago processa as cobranças recorrentes em reais.' : 'O Stripe processa as cobranças recorrentes na moeda escolhida.' }}
           Os dados do seu cartão não são armazenados pelo Cloud Seller.
         </p>
 

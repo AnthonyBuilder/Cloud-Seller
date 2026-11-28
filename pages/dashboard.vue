@@ -730,7 +730,7 @@ async function deleteSelectedFiles() {
     uploadMessage.value = 'O período gratuito terminou; o armazenamento está somente para leitura.'
     return
   }
-  if (!window.confirm(`Excluir permanentemente ${targets.length} arquivo(s) selecionado(s)?`)) return
+  if (!window.confirm(`Mover ${targets.length} arquivo(s) selecionado(s) para a lixeira? Você poderá restaurar em até 30 dias.`)) return
 
   bulkActionRunning.value = true
   const deletedIds = new Set<string>()
@@ -764,8 +764,8 @@ async function deleteSelectedFiles() {
     }
 
     uploadMessage.value = failures.length
-      ? `${deletedIds.size} arquivo(s) excluído(s). Falhas: ${failures.join('; ')}`
-      : `${deletedIds.size} arquivo(s) excluído(s).`
+      ? `${deletedIds.size} arquivo(s) movido(s) para a lixeira. Falhas: ${failures.join('; ')}`
+      : `${deletedIds.size} arquivo(s) movido(s) para a lixeira.`
   } finally {
     bulkActionRunning.value = false
   }
@@ -811,7 +811,7 @@ async function deleteFile(file: CloudFile) {
     uploadMessage.value = 'O período gratuito terminou; o armazenamento está somente para leitura.'
     return
   }
-  if (!window.confirm(`Excluir "${file.name}"?`)) return
+  if (!window.confirm(`Mover "${file.name}" para a lixeira? Você poderá restaurar em até 30 dias.`)) return
   if (awsMode.value) {
     await $fetch('/api/files/delete', {
       method: 'DELETE',
@@ -832,7 +832,7 @@ async function deleteFolder(folder: CloudFolder) {
     uploadMessage.value = 'O período gratuito terminou; o armazenamento está somente para leitura.'
     return
   }
-  if (!window.confirm(`Excluir a pasta "${folder.name}" e todo o conteúdo nela?`)) return
+  if (!window.confirm(`Mover a pasta "${folder.name}" e todo o conteúdo nela para a lixeira? Você poderá restaurar em até 30 dias.`)) return
   if (awsMode.value) {
     await $fetch('/api/files/folder', {
       method: 'DELETE',
@@ -1030,6 +1030,9 @@ function categoryIconName(category: FileCategory): 'photo' | 'pdf' | 'spreadshee
         <NuxtLink to="/dashboard" :class="{ active: currentCollection === 'all' }"><IconSymbol name="grid" /> Meus arquivos</NuxtLink>
         <NuxtLink to="/dashboard?view=recent" :class="{ active: currentCollection === 'recent' }"><IconSymbol name="clock" /> Recentes</NuxtLink>
         <NuxtLink to="/dashboard?view=favorites" :class="{ active: currentCollection === 'favorites' }"><IconSymbol name="star" /> Favoritos</NuxtLink>
+        <NuxtLink to="/trash"><IconSymbol name="trash" /> Lixeira</NuxtLink>
+        <NuxtLink to="/backup"><IconSymbol name="cloud-upload" /> App de backup</NuxtLink>
+        <NuxtLink to="/conta"><IconSymbol name="user" /> Minha conta</NuxtLink>
       </nav>
 
       <div class="storage-summary">
@@ -1286,7 +1289,7 @@ function categoryIconName(category: FileCategory): 'photo' | 'pdf' | 'spreadshee
                 type="button"
                 :disabled="readOnlyStorage"
                 :aria-label="`Excluir pasta ${folder.name}`"
-                title="Excluir pasta"
+                title="Mover pasta para a lixeira"
                 @click="deleteFolder(folder)"
               >
                 <IconSymbol name="trash" />

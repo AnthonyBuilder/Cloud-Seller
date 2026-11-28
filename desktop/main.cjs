@@ -1,4 +1,12 @@
-const { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, safeStorage, shell, Tray } = require('electron')
+const { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, powerSaveBlocker, safeStorage, shell, Tray } = require('electron')
+const {
+  dayKey,
+  nextNightlyRun,
+  normalizeBackupTime,
+  normalizeRetentionDays,
+  shouldRunNightlyBackup,
+  snapshotsToDelete,
+} = require('./schedule.cjs')
 const chokidar = require('chokidar')
 const crypto = require('node:crypto')
 const fs = require('node:fs')
@@ -43,6 +51,8 @@ function defaultSettings() {
     folders: [],
     backupOnChange: true,
     dailyBackup: true,
+    backupTime: '02:00',
+    retentionDays: 30,
     startAtLogin: true,
     deviceName: os.hostname(),
   }
@@ -300,13 +310,6 @@ function slug(value) {
   return value.normalize('NFC').replace(/[\\/]/g, '-').replace(/[^\p{L}\p{N}._ -]/gu, '-').trim() || 'computador'
 }
 
-function dayKey(date = new Date()) {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
 function rootFolderName(root) {
   const name = slug(path.basename(root))
   const fingerprint = crypto.createHash('sha256')
@@ -346,9 +349,10 @@ async function uploadBackupFile(filePath, root, snapshot = 'current') {
     && previous.device === device
     && previous.currentMtimeMs === stat.mtimeMs
     && previous.currentSize === stat.size) return
+  // A cópia diária guarda só a versão dos arquivos que mudaram desde a última vez (histórico
+  // incremental); o que não mudou já está em Current. Assim o espaço usado não cresce todo dia.
   if (snapshot === 'daily'
     && previous.device === device
-    && previous.dailyDate === date
     && previous.dailyMtimeMs === stat.mtimeMs
     && previous.dailySize === stat.size) return
 
@@ -411,21 +415,55 @@ async function walkFiles(directory, callback) {
   }
 }
 
-async function runFullBackup() {
+async function pruneOldSnapshots() {
+  const base = `/${BACKUP_ROOT}/${slug(settings.deviceName)}/Daily/`
+  let folders
+  try {
+    const response = await apiRequest(`/api/files/list?folder=${encodeURIComponent(base)}`)
+    folders = (await response.json()).folders || []
+  } catch (error) {
+    notify(`Não foi possível limpar o histórico antigo: ${error.message}`, 'error')
+    return
+  }
+
+  const expired = snapshotsToDelete(folders.map(folder => folder.name), dayKey(), settings.retentionDays)
+  for (const name of expired) {
+    await apiRequest('/api/files/folder', {
+      method: 'DELETE',
+      body: JSON.stringify({ path: `${base}${name}/`, permanent: true }),
+    })
+  }
+  if (expired.length) notify(`Histórico com mais de ${normalizeRetentionDays(settings.retentionDays)} dias removido (${expired.length} dia(s)).`)
+}
+
+// nightly=true: backup completo da noite (arquivos novos/alterados + versões diárias + limpeza do histórico).
+// nightly=false: só envia o que mudou para a cópia atual (usado ao abrir o app).
+async function runFullBackup({ nightly = true } = {}) {
   if (!settings.folders.length) {
     notify('Adicione ao menos uma pasta para fazer backup.', 'error')
     return
   }
-  notify('Backup em andamento…')
-  for (const root of settings.folders) {
-    await walkFiles(root, async (filePath) => {
-      await uploadBackupFile(filePath, root, 'current')
-      if (settings.dailyBackup) await uploadBackupFile(filePath, root, 'daily')
-    })
+  // Impede o computador de suspender no meio do backup.
+  const blocker = powerSaveBlocker.start('prevent-app-suspension')
+  try {
+    notify(nightly ? 'Backup noturno em andamento…' : 'Verificando alterações…')
+    const withDaily = nightly && settings.dailyBackup
+    for (const root of settings.folders) {
+      await walkFiles(root, async (filePath) => {
+        await uploadBackupFile(filePath, root, 'current')
+        if (withDaily) await uploadBackupFile(filePath, root, 'daily')
+      })
+    }
+    if (nightly) {
+      settings.lastDailyBackup = dayKey()
+      settings.lastBackupAt = new Date().toISOString()
+      await writeJson(settingsPath(), settings)
+      if (settings.dailyBackup) await pruneOldSnapshots()
+    }
+    notify('Backup concluído.', 'success')
+  } finally {
+    powerSaveBlocker.stop(blocker)
   }
-  settings.lastDailyBackup = dayKey()
-  await writeJson(settingsPath(), settings)
-  notify('Backup concluído.', 'success')
 }
 
 async function startWatcher() {
@@ -458,11 +496,18 @@ async function startWatcher() {
 
   if (settings.dailyBackup) {
     dailyTimer = setInterval(() => {
-      if (!dailyBackupRunning && settings.dailyBackup && settings.lastDailyBackup !== dayKey()) {
+      if (
+        !dailyBackupRunning
+        && settings.dailyBackup
+        && shouldRunNightlyBackup({
+          lastDailyBackup: settings.lastDailyBackup,
+          backupTime: settings.backupTime,
+        })
+      ) {
         dailyBackupRunning = true
         queueTask(async () => {
           try {
-            await runFullBackup()
+            await runFullBackup({ nightly: true })
           } finally {
             dailyBackupRunning = false
           }
@@ -470,7 +515,7 @@ async function startWatcher() {
       }
     }, 60_000)
   }
-  void queueTask(runFullBackup)
+  void queueTask(() => runFullBackup({ nightly: false }))
 }
 
 async function listBackups() {
@@ -539,8 +584,12 @@ async function getState() {
   if (!settings) settings = { ...defaultSettings(), ...await readJson(settingsPath(), {}) }
   if (!manifest || !Object.keys(manifest).length) manifest = await readJson(manifestPath(), {})
   if (!tokens) tokens = await loadTokens()
+  const nextNightly = settings.dailyBackup && settings.folders.length
+    ? nextNightlyRun({ lastDailyBackup: settings.lastDailyBackup, backupTime: settings.backupTime }).toISOString()
+    : null
   return {
     settings,
+    nextNightlyBackup: nextNightly,
     connected: Boolean(tokens?.idToken),
     encryptedStorage: safeStorage.isEncryptionAvailable(),
   }
@@ -640,6 +689,8 @@ ipcMain.handle('backup:save-settings', async (_event, next) => {
   settings.deviceName = slug(next.deviceName)
   settings.backupOnChange = Boolean(next.backupOnChange)
   settings.dailyBackup = Boolean(next.dailyBackup)
+  settings.backupTime = normalizeBackupTime(next.backupTime)
+  settings.retentionDays = normalizeRetentionDays(next.retentionDays)
   settings.startAtLogin = Boolean(next.startAtLogin)
   if (!settings.backupOnChange && !settings.dailyBackup) {
     throw new Error('Ative pelo menos um modo de backup.')
@@ -649,7 +700,7 @@ ipcMain.handle('backup:save-settings', async (_event, next) => {
   await startWatcher()
   return settings
 })
-ipcMain.handle('backup:run-now', () => queueTask(runFullBackup))
+ipcMain.handle('backup:run-now', () => queueTask(() => runFullBackup({ nightly: true })))
 ipcMain.handle('backup:list', listBackups)
 ipcMain.handle('backup:restore', (_event, keys) => restoreFiles(keys))
 ipcMain.handle('backup:open-dashboard', async () => {

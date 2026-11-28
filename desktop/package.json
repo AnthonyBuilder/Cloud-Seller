@@ -1,12 +1,13 @@
 {
   "name": "cloud-seller-backup",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "Cliente de backup automático da Cloud Seller",
   "main": "main.cjs",
   "scripts": {
     "start": "electron .",
-    "dist": "node prepare-config.cjs && electron-builder --config electron-builder.yml"
+    "dist": "node prepare-config.cjs && electron-builder --config electron-builder.yml",
+    "test": "node ../scripts/check-backup.cjs"
   },
   "dependencies": {
     "chokidar": "^4.0.3"

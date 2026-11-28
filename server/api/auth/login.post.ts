@@ -21,6 +21,16 @@ export default defineEventHandler(async (event) => {
       },
     }))
 
+    if (result.ChallengeName === 'SOFTWARE_TOKEN_MFA' && result.Session) {
+      return { mfaRequired: true as const, session: result.Session }
+    }
+    if (result.ChallengeName === 'MFA_SETUP') {
+      throw createError({
+        statusCode: 409,
+        message: 'Sua conta exige verificação em duas etapas, mas ela ainda não foi configurada. Fale com o suporte.',
+      })
+    }
+
     const authentication = result.AuthenticationResult
     if (!authentication?.IdToken || !authentication.AccessToken) {
       throw createError({

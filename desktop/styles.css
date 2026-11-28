@@ -474,3 +474,15 @@ code {
     transition-duration: .01ms !important;
   }
 }
+
+.inline-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.inline-field input {
+  width: 120px;
+}

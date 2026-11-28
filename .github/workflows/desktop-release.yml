@@ -1,0 +1,58 @@
+name: Publicar app de backup (desktop)
+
+# Para publicar uma versão: crie e envie uma tag, por exemplo
+#   git tag desktop-v1.1.0 && git push origin desktop-v1.1.0
+# Pré-requisito: em Settings > Secrets and variables > Actions > Variables, crie
+#   CLOUD_SELLER_SERVER_URL = https://seu-dominio   (endereço público do site, com HTTPS)
+on:
+  push:
+    tags:
+      - 'desktop-v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: node scripts/check-backup.cjs
+      - run: npm ci --prefix desktop
+      - name: Gerar instalador
+        run: npm run dist --prefix desktop
+        env:
+          CLOUD_SELLER_SERVER_URL: ${{ vars.CLOUD_SELLER_SERVER_URL }}
+          # Assinatura de código (opcional, mas evita avisos do Windows/macOS). Veja docs/OPERACAO.md.
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.os }}
+          path: |
+            desktop/release/*.exe
+            desktop/release/*.dmg
+            desktop/release/*.AppImage
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: installers
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: installers/*
+          generate_release_notes: true

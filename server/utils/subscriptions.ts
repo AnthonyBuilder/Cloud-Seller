@@ -2,15 +2,20 @@ import { ConditionalCheckFailedException, DynamoDBClient } from '@aws-sdk/client
 import { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb'
 import { ListObjectsV2Command } from '@aws-sdk/client-s3'
 import { getFileCategory, type FileCategory } from '../../utils/file-types'
-import { STORAGE_PLAN_CATALOG } from '../../utils/plan-catalog'
+import { trashPrefixFor } from '../../utils/trash-keys'
+import { buildPlanCatalog, resolvePriceBook, type BillingInterval, type CatalogPlan } from '../../utils/plan-catalog'
 
 // Preços e cotas ficam em utils/plan-catalog.ts (fonte única, também usada na home).
-export const STORAGE_PLANS = STORAGE_PLAN_CATALOG
+// O livro de preços ativo vem de NUXT_PUBLIC_PRICE_BOOK (o mesmo valor que a home usa).
+export function getStoragePlans() {
+  const config = useRuntimeConfig()
+  return buildPlanCatalog(resolvePriceBook(process.env.NUXT_PUBLIC_PRICE_BOOK || config.public.priceBook))
+}
 
 export const FREE_TRIAL_PLAN_ID = 'essencial'
 export const FREE_TRIAL_DURATION_MS = 24 * 60 * 60 * 1000
 
-export type StoragePlan = typeof STORAGE_PLANS[number]
+export type StoragePlan = CatalogPlan
 export type PaymentProvider = 'stripe' | 'mercadopago'
 export type SubscriptionRecord = {
   userId: string
@@ -25,6 +30,7 @@ export type SubscriptionRecord = {
   mercadoPagoInitPoint?: string
   currentPeriodEnd?: number
   cancelAtPeriodEnd?: boolean
+  billingInterval?: BillingInterval
   pendingUploadKey?: string
   pendingUploadBytes?: number
   pendingUploadExpiresAt?: number
@@ -48,7 +54,7 @@ function getDocumentClient() {
 
 export function findStoragePlan(planId: unknown): StoragePlan | undefined {
   return typeof planId === 'string'
-    ? STORAGE_PLANS.find(plan => plan.id === planId)
+    ? getStoragePlans().find(plan => plan.id === planId)
     : undefined
 }
 
@@ -103,7 +109,8 @@ export async function getStorageUsage(userId: string) {
     continuationToken = response.NextContinuationToken
   } while (continuationToken)
 
-  return usedBytes
+  // Itens na lixeira ocupam espaço do plano até serem excluídos (30 dias).
+  return usedBytes + await sumPrefixBytes(client, bucket, trashPrefixFor(userId))
 }
 
 export async function getStorageUsageSummary(userId: string) {
@@ -138,7 +145,8 @@ export async function getStorageUsageSummary(userId: string) {
     continuationToken = response.NextContinuationToken
   } while (continuationToken)
 
-  return { usedBytes, usageByCategory }
+  const trashBytes = await sumPrefixBytes(client, bucket, trashPrefixFor(userId))
+  return { usedBytes: usedBytes + trashBytes, trashBytes, usageByCategory }
 }
 
 export async function createActiveSubscription(userId: string, plan: StoragePlan) {
@@ -206,14 +214,17 @@ export async function updateSubscriptionBilling(
     mercadoPagoInitPoint?: string
     currentPeriodEnd?: number
     cancelAtPeriodEnd?: boolean
+    // Só é gravado quando informado (checkout); os webhooks preservam o valor existente.
+    billingInterval?: BillingInterval
   },
 ) {
   await getDocumentClient().send(new UpdateCommand({
     TableName: getTableName(),
     Key: { userId },
-    UpdateExpression: 'SET #status = :status, planId = :planId, paymentProvider = :paymentProvider, stripeCustomerId = :customerId, stripeSubscriptionId = :subscriptionId, stripeCheckoutSessionId = :checkoutSessionId, mercadoPagoPreapprovalId = :preapprovalId, mercadoPagoInitPoint = :initPoint, currentPeriodEnd = :periodEnd, cancelAtPeriodEnd = :cancelAtPeriodEnd',
+    UpdateExpression: `SET #status = :status, planId = :planId, paymentProvider = :paymentProvider, stripeCustomerId = :customerId, stripeSubscriptionId = :subscriptionId, stripeCheckoutSessionId = :checkoutSessionId, mercadoPagoPreapprovalId = :preapprovalId, mercadoPagoInitPoint = :initPoint, currentPeriodEnd = :periodEnd, cancelAtPeriodEnd = :cancelAtPeriodEnd${values.billingInterval ? ', billingInterval = :billingInterval' : ''}`,
     ExpressionAttributeNames: { '#status': 'status' },
     ExpressionAttributeValues: {
+      ...(values.billingInterval ? { ':billingInterval': values.billingInterval } : {}),
       ':status': values.status,
       ':planId': values.planId,
       ':paymentProvider': values.paymentProvider || 'stripe',
@@ -302,6 +313,20 @@ export async function extendUploadReservation(userId: string, key: string) {
       ':key': key,
       ':now': now,
       ':expires': now + 330_000,
+    },
+  }))
+}
+
+// Prova de aceite dos Termos e da Política de Privacidade. Fica na mesma tabela, com uma
+// chave própria ("consent#<sub>") que não colide com os registros de assinatura.
+export async function recordTermsAcceptance(sub: string, email: string, termsVersion: string) {
+  await getDocumentClient().send(new PutCommand({
+    TableName: getTableName(),
+    Item: {
+      userId: `consent#${sub}`,
+      email,
+      termsVersion,
+      acceptedAt: new Date().toISOString(),
     },
   }))
 }

@@ -69,7 +69,7 @@ export function createMercadoPagoPreapproval(body: {
   back_url: string
   notification_url: string
   auto_recurring: {
-    frequency: 1
+    frequency: number
     frequency_type: 'months'
     transaction_amount: number
     currency_id: 'BRL'

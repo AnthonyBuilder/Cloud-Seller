@@ -59,23 +59,48 @@ assinatura (`x-signature`) é validada com HMAC-SHA256.
 Se o Access Token ou o Client Secret forem expostos (chat, print, repositório), gere novas
 credenciais no painel e atualize a Vercel.
 
-## Planos e preços
+## Planos, preços e moeda por país
 
-Os planos ficam em `utils/plan-catalog.ts`, fonte única para cobrança e página inicial.
-Para mudar um preço, altere apenas esse arquivo.
+Os planos ficam em `utils/plan-catalog.ts`, fonte única para cobrança e páginas públicas. Para mudar
+um preço, altere apenas esse arquivo. Os valores são tabelas fixas por moeda (centavos), nunca
+conversão de câmbio ao vivo.
 
-| Plano     | Espaço | Mercado Pago (BRL) | Stripe (USD) |
-|-----------|--------|--------------------|--------------|
-| Essencial | 100 GB | R$ 14,90/mês       | US$ 3,99/mês |
-| Pro       | 500 GB | R$ 59,90/mês       | US$ 12,99/mês |
-| Família   | 1 TB   | R$ 109,90/mês      | US$ 22,99/mês |
+**Ciclos:** mensal e anual (anual = 10 mensalidades, 2 meses grátis). O ciclo contratado fica gravado na assinatura
+(`billingInterval`). No Stripe o plano anual usa `interval: year`; no Mercado Pago, cobrança a cada 12 meses
+(teste antes de divulgar; veja `docs/OPERACAO.md`).
 
-Premissas (revisar quando o câmbio ou a tabela da AWS mudarem): S3 Standard a ~US$ 0,023/GB-mês,
-saída de dados a ~US$ 0,09/GB, dólar a ~R$ 5,80, gateway ~5% + tarifa fixa e impostos ~6%.
-Com uso médio de 60% (100 GB), 45% (500 GB) e 35% (1 TB) da cota, a margem fica entre
-cerca de 25% e 45%. Um cliente que lota 100% da cota gera prejuízo; para reduzir esse risco,
-use ciclo de vida do S3 (por exemplo, mover `Backups/` antigos para classes mais baratas)
-e acompanhe o uso real.
+**Moeda automática:** a moeda segue o país do visitante (header `x-vercel-ip-country` da Vercel):
+Brasil → BRL (Mercado Pago); zona do euro → EUR, se `NUXT_PUBLIC_ENABLE_EUR=true`; demais países → USD
+(Stripe). Sem país, o idioma `pt-BR` do navegador usa BRL. O visitante pode trocar a moeda no seletor
+(gravada no cookie `cs_currency`). A moeda define o meio de pagamento no checkout. Para testar
+localmente, envie o header, por exemplo `curl -H "x-vercel-ip-country: US" http://localhost:3000`.
+
+**Dois livros de preço** (variável `NUXT_PUBLIC_PRICE_BOOK`):
+
+| Plano     | Espaço | `seguro` (padrão) BRL / USD | `competitivo` BRL / USD / EUR |
+|-----------|--------|-----------------------------|-------------------------------|
+| Essencial | 100 GB | R$ 14,90 / US$ 3,99         | R$ 9,90 / US$ 2,99 / € 2,99   |
+| Pro       | 500 GB | R$ 59,90 / US$ 12,99        | R$ 34,90 / US$ 8,99 / € 8,49  |
+| Família   | 1 TB   | R$ 109,90 / US$ 22,99       | R$ 64,90 / US$ 15,99 / € 14,99 |
+
+- `seguro`: preços para o storage atual em S3 Standard, que cobra pelo download. Mesmo assim a margem
+  só fecha com pouco download; meça o uso real.
+- `competitivo`: preços próximos do Google One e do iCloud. **Só ative depois de migrar o storage** para
+  Backblaze B2 ou Cloudflare R2 (`S3_ENDPOINT` já é suportado). Em S3 Standard esses preços dão prejuízo.
+- EUR fica desligada até configurar IVA (Stripe Tax/OSS). Os valores em EUR já incluem IVA.
+- Assinantes antigos mantêm o valor contratado: o preço é fixado no Stripe/Mercado Pago na assinatura.
+
+Verificações antes de mudar preços ou storage:
+
+```bash
+npm run check-pricing                                   # consistência do catálogo e da detecção de moeda
+npm run margin-check                                    # margem por plano e moeda (livro e storage atuais)
+PRICE_BOOK=competitivo STORAGE_PROVIDER=b2 npm run margin-check
+```
+
+As premissas do `margin-check` (uso da cota, download mensal, taxas, impostos) estão no topo de
+`scripts/margin-check.ts`; substitua pelos dados reais e revise a cada trimestre ou quando o dólar
+variar mais de 8%.
 
 ## Estado do MVP
 
@@ -138,12 +163,17 @@ assim, usuários diferentes não podem acessar pastas uns dos outros.
 
 ## Aplicativo Cloud Seller Backup
 
-O cliente desktop em `desktop/` permite escolher pastas locais, enviar arquivos
-automaticamente ao detectar alterações, fazer uma cópia diária e restaurar arquivos.
-Ele mantém uma cópia atual e snapshots diários no prefixo privado `Backups/` da conta.
-Arquivos locais removidos não apagam as cópias na nuvem. Snapshots não são apagados
-automaticamente; configure uma política de retenção antes de oferecer o serviço, pois
-o espaço ocupado e o custo de S3 crescem com o tempo. Cada upload é limitado a 5 GB.
+O cliente desktop em `desktop/` envia as pastas escolhidas para a nuvem, restaura arquivos e roda sozinho:
+
+- **Backup noturno:** todo dia, no horário escolhido (padrão 02:00), confere todas as pastas, envia o que mudou
+  e guarda uma versão diária dos arquivos alterados. Se o computador estava desligado, o backup roda assim que
+  ele ligar e o app abrir (recupera noites perdidas). Durante o backup o app impede a suspensão do computador.
+- **Durante o dia (opcional):** envia arquivos novos ou alterados logo depois de salvos.
+- **Retenção:** versões diárias com mais de N dias (padrão 30, ajustável de 7 a 365) são removidas
+  automaticamente após cada backup noturno. O histórico é incremental: só entram as versões dos arquivos que
+  mudaram, e a cópia atual fica em `Backups/<computador>/Current/`.
+- Arquivos locais removidos não apagam a cópia atual na nuvem. Cada upload é limitado a 5 GB.
+- Tudo conta na cota do plano do cliente.
 
 O cliente usa OAuth Authorization Code com PKCE, não contém credenciais AWS e guarda
 tokens com a criptografia nativa do Windows/macOS. Fechar a janela mantém o app na
@@ -151,7 +181,12 @@ bandeja; por padrão ele inicia com o sistema. `.git`, `node_modules` e `.DS_Sto
 são ignorados. Na restauração, a estrutura do computador, data e pasta de origem é
 preservada no destino escolhido.
 
-### Configuração e instaladores
+### Distribuição para clientes
+
+A página pública `/backup` oferece o download para Windows, macOS e Linux. Os instaladores são gerados pelo
+GitHub Actions ao enviar uma tag `desktop-v*` (passo a passo em `docs/OPERACAO.md`).
+
+### Configuração e instaladores (manual)
 
 1. Configure `NUXT_PUBLIC_DESKTOP_REDIRECT_URI` como
    `http://localhost:53682/callback` na hospedagem.
@@ -168,3 +203,16 @@ preservada no destino escolhido.
 Na primeira execução, informe o endereço público do Cloud Seller, conecte a conta,
 adicione as pastas e salve as preferências. O login deve permanecer ativo para os
 backups automáticos funcionarem.
+
+## Páginas legais, conta, MFA e lixeira
+
+- `/termos`, `/privacidade` e `/reembolso`: rascunhos em português (LGPD e CDC) com dados da empresa vindos de
+  variáveis `NUXT_PUBLIC_COMPANY_*`. **Revise com um advogado** e depois defina `NUXT_PUBLIC_LEGAL_DRAFT=false`.
+  O cadastro exige o aceite e grava a prova (versão e data) no DynamoDB.
+- `/conta`: ativar e desativar a verificação em duas etapas (TOTP) pelo Cognito. O login pede o código quando ativa.
+  Requer "Optional MFA" com aplicativos autenticadores no User Pool.
+- `/trash`: excluir arquivos e pastas move para a lixeira (`trash/<usuário>/` no bucket), restaurável por 30 dias.
+  Itens na lixeira ocupam espaço do plano. Limpeza por regra de ciclo de vida do bucket e pela tarefa diária
+  `/api/cron/purge-trash` (`vercel.json`, exige `CRON_SECRET`). Atenção às permissões IAM para `trash/*`.
+
+Verificações: `npm run check-pricing`, `npm run check-trash`, `npm run check-backup`, `npm run margin-check`.
