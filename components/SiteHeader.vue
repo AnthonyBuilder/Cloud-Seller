@@ -36,6 +36,8 @@ onBeforeUnmount(() => {
       <NuxtLink to="/#planos">Planos</NuxtLink>
     </nav>
 
+    <ThemeToggle class="header-theme-toggle" />
+
     <NuxtLink class="button button-small button-outline header-action" to="/login" aria-label="Acessar minha nuvem" title="Acessar minha nuvem">
       <span class="header-action-label">Entrar</span>
       <IconSymbol name="user" />

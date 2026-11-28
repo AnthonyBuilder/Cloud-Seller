@@ -1061,7 +1061,10 @@ function categoryIconName(category: FileCategory): 'photo' | 'pdf' | 'spreadshee
           </div>
           <p class="dashboard-subtitle">Encontre e organize seus arquivos em um só lugar.</p>
         </div>
-        <div class="user-avatar">{{ session?.name?.charAt(0).toUpperCase() || 'U' }}</div>
+        <div class="dashboard-header-tools">
+          <ThemeToggle />
+          <div class="user-avatar">{{ session?.name?.charAt(0).toUpperCase() || 'U' }}</div>
+        </div>
       </header>
 
       <div

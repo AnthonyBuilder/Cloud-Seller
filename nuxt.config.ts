@@ -2,6 +2,19 @@ export default defineNuxtConfig({
   compatibilityDate: '2025-03-01',
   devtools: { enabled: true },
   app: {
+    head: {
+      htmlAttrs: { lang: 'pt-BR' },
+      meta: [
+        { name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover' },
+        { name: 'color-scheme', content: 'light dark' },
+        { name: 'theme-color', content: '#f4f7fb' },
+      ],
+      // Aplica o tema salvo antes da primeira pintura (evita "piscar" claro no modo escuro).
+      script: [{
+        innerHTML: "(function(){try{var t=localStorage.getItem('cloud-seller-theme');if(t==='dark'||t==='light'){document.documentElement.setAttribute('data-theme',t)}}catch(e){}})()",
+        tagPosition: 'head',
+      }],
+    },
     pageTransition: {
       name: 'page',
       mode: 'out-in',
