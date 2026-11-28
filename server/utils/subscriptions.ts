@@ -2,7 +2,6 @@ import { ConditionalCheckFailedException, DynamoDBClient } from '@aws-sdk/client
 import { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb'
 import { ListObjectsV2Command } from '@aws-sdk/client-s3'
 import { getFileCategory, type FileCategory } from '../../utils/file-types'
-import { trashPrefixFor } from '../../utils/trash-keys'
 import { buildPlanCatalog, resolvePriceBook, type BillingInterval, type CatalogPlan } from '../../utils/plan-catalog'
 
 // Preços e cotas ficam em utils/plan-catalog.ts (fonte única, também usada na home).
@@ -110,7 +109,7 @@ export async function getStorageUsage(userId: string) {
   } while (continuationToken)
 
   // Itens na lixeira ocupam espaço do plano até serem excluídos (30 dias).
-  return usedBytes + await sumPrefixBytes(client, bucket, trashPrefixFor(userId))
+  return usedBytes + await getTrashBytes(client, bucket, userId)
 }
 
 export async function getStorageUsageSummary(userId: string) {
@@ -145,7 +144,7 @@ export async function getStorageUsageSummary(userId: string) {
     continuationToken = response.NextContinuationToken
   } while (continuationToken)
 
-  const trashBytes = await sumPrefixBytes(client, bucket, trashPrefixFor(userId))
+  const trashBytes = await getTrashBytes(client, bucket, userId)
   return { usedBytes: usedBytes + trashBytes, trashBytes, usageByCategory }
 }
 

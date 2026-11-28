@@ -9,6 +9,40 @@ import { buildTrashKey, parseTrashKey, restoredName, trashPrefixFor } from '../.
 
 type S3 = ReturnType<typeof createS3Client>
 
+function isAccessDenied(error: unknown) {
+  if (!(error instanceof Error)) return false
+  const status = (error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode
+  return error.name === 'AccessDenied' || status === 403
+}
+
+// Se as credenciais do storage ainda não têm permissão no prefixo trash/, devolvemos um aviso claro
+// em vez de um erro 500 genérico. Nunca caímos para exclusão definitiva por conta própria.
+async function withTrashAccess<T>(action: () => Promise<T>): Promise<T> {
+  try {
+    return await action()
+  } catch (error) {
+    if (isAccessDenied(error)) {
+      console.error('[trash] AccessDenied no prefixo trash/: ajuste a política IAM (docs/iam-trash-policy.json)')
+      throw createError({
+        statusCode: 503,
+        message: 'A lixeira ainda não está disponível neste serviço. Tente novamente mais tarde.',
+      })
+    }
+    throw error
+  }
+}
+
+// Uso da lixeira para o cálculo da cota. Se não der para ler (permissão), conta 0 e registra o problema,
+// para não derrubar o painel nem os uploads.
+export async function getTrashBytes(client: S3, bucket: string, sub: string) {
+  try {
+    return await sumPrefixBytes(client, bucket, trashPrefixFor(sub))
+  } catch (error) {
+    console.error('[trash] não foi possível calcular o uso da lixeira:', error instanceof Error ? error.name : 'erro')
+    return 0
+  }
+}
+
 function copySource(bucket: string, key: string) {
   return `${bucket}/${key.split('/').map(segment => encodeURIComponent(segment)).join('/')}`
 }
@@ -43,7 +77,7 @@ export async function sumPrefixBytes(client: S3, bucket: string, prefix: string)
 // Move arquivos para a lixeira (copiar + apagar). Marcadores de pasta vazios são apagados direto.
 export async function moveKeysToTrash(client: S3, bucket: string, sub: string, keys: string[]) {
   const deletedAt = Date.now()
-  await inBatches(keys, 8, async (key) => {
+  await withTrashAccess(() => inBatches(keys, 8, async (key) => {
     if (key.endsWith('/')) {
       await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }))
       return
@@ -54,7 +88,7 @@ export async function moveKeysToTrash(client: S3, bucket: string, sub: string, k
       Key: buildTrashKey(sub, key, deletedAt),
     }))
     await client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }))
-  })
+  }))
 }
 
 export async function deleteKeysPermanently(client: S3, bucket: string, keys: string[]) {
@@ -77,7 +111,8 @@ async function exists(client: S3, bucket: string, key: string) {
 }
 
 export async function listTrashItems(client: S3, bucket: string, sub: string) {
-  const items = (await listAllKeys(client, bucket, trashPrefixFor(sub)))
+  const objects = await withTrashAccess(() => listAllKeys(client, bucket, trashPrefixFor(sub)))
+  const items = objects
     .flatMap((object) => {
       const parsed = parseTrashKey(sub, object.key)
       return parsed ? [{ ...parsed, key: object.key, size: object.size }] : []
@@ -87,6 +122,10 @@ export async function listTrashItems(client: S3, bucket: string, sub: string) {
 
 // Restaura para o caminho original; se já existir um arquivo igual, restaura com o sufixo "(restaurado AAAA-MM-DD)".
 export async function restoreTrashKeys(client: S3, bucket: string, sub: string, keys: string[]) {
+  return withTrashAccess(() => restoreTrashKeysUnchecked(client, bucket, sub, keys))
+}
+
+async function restoreTrashKeysUnchecked(client: S3, bucket: string, sub: string, keys: string[]) {
   let restored = 0
   for (const key of keys) {
     const parsed = parseTrashKey(sub, key)

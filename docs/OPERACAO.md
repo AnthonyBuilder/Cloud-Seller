@@ -42,10 +42,12 @@ Cada cliente ativa em **Minha conta** (`/conta`).
 
 A lixeira usa o prefixo `trash/<usuário>/` no mesmo bucket.
 
-1. **Permissões (IAM):** as credenciais do app (`S3_ACCESS_KEY_ID` ou o role) precisam de
+1. **Permissões (IAM) — faça isto primeiro.** As credenciais do app (o usuário IAM das chaves `S3_*`) precisam de
    `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject` em `arn:aws:s3:::SEU-BUCKET/trash/*` e de
    `s3:ListBucket` com a condição de prefixo `trash/*`, além do que já têm para `users/*`.
-   Sem isso, excluir arquivos falha.
+   Use `docs/iam-trash-policy.json` (troque `SEU-BUCKET`) como uma política **adicional** anexada ao mesmo usuário.
+   Sem isso, a página `/trash` e o botão de excluir mostram "lixeira indisponível" (o resto do site continua
+   funcionando, e nenhum arquivo é apagado sem passar pela lixeira).
 2. **Expiração automática:** aplique `docs/s3-lifecycle-trash.json` (apaga após 31 dias; a tarefa diária
    apaga aos 30). Atenção: o comando abaixo **substitui** as regras existentes do bucket; se já houver regras,
    junte-as ao JSON antes.
