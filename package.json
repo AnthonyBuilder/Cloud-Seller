@@ -9,7 +9,7 @@
     "postinstall": "nuxt prepare",
     "preview": "nuxt preview",
     "check-pricing": "node --experimental-strip-types --no-warnings scripts/check-pricing.mjs",
-    "margin-check": "node --experimental-strip-types --no-warnings scripts/margin-check.ts",
+    "margin-check": "node --experimental-strip-types --no-warnings scripts/margin-check.mjs",
     "check-trash": "node --experimental-strip-types --no-warnings scripts/check-trash.mjs",
     "check-backup": "node scripts/check-backup.cjs"
   },

@@ -99,7 +99,7 @@ PRICE_BOOK=competitivo STORAGE_PROVIDER=b2 npm run margin-check
 ```
 
 As premissas do `margin-check` (uso da cota, download mensal, taxas, impostos) estão no topo de
-`scripts/margin-check.ts`; substitua pelos dados reais e revise a cada trimestre ou quando o dólar
+`scripts/margin-check.mjs`; substitua pelos dados reais e revise a cada trimestre ou quando o dólar
 variar mais de 8%.
 
 ## Estado do MVP
